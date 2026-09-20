@@ -1,50 +1,71 @@
 # FlowPulse
 
-Este repositório contém a estrutura inicial do projeto FlowPulse, desenvolvido a partir do roteiro de Discovery proposto na disciplina.
+FlowPulse é um projeto aplicado voltado ao acompanhamento de automações e pipelines.
 
-## Sobre o projeto
+A proposta é centralizar execuções, identificar ocorrências relevantes e permitir que um incidente seja acompanhado desde a detecção até a resolução.
 
-A ideia do FlowPulse surgiu a partir de um problema comum em ambientes que utilizam diferentes automações e pipelines: quando alguma execução apresenta erro, as informações necessárias para identificar o problema podem estar espalhadas entre ferramentas, logs e notificações.
+## Documentação
 
-Nesta primeira etapa, o foco está na definição e validação desse problema. A solução e as decisões técnicas serão detalhadas nas próximas etapas do Discovery.
+| Documento | Conteúdo |
+|---|---|
+| [`docs/problem.md`](docs/problem.md) | definição e validação do problema |
+| [`docs/prd.md`](docs/prd.md) | requisitos e escopo do produto |
+| [`docs/spec.md`](docs/spec.md) | especificação técnica e fluxos |
+| [`docs/architecture.md`](docs/architecture.md) | decisões de arquitetura |
+| [`docs/design.md`](docs/design.md) | design system e diretrizes de interface |
+| [`docs/refinement-review.md`](docs/refinement-review.md) | revisão dos documentos de refinamento |
 
-## Status atual
+## Fluxos principais do MVP
 
-- `docs/problem.md` — concluído
-- `docs/prd.md` — próxima etapa
-- `docs/spec.md` — a desenvolver
-- `docs/architecture.md` — a desenvolver
-- `docs/design.md` — a desenvolver
-- `prototypes/` — protótipos serão criados posteriormente no Stitch
-
-## Estrutura do repositório
+### 1. Integração de uma automação
 
 ```text
-flowpulse/
-├── docs/
-│   ├── problem.md
-│   ├── prd.md
-│   ├── spec.md
-│   ├── architecture.md
-│   └── design.md
-├── prototypes/
-│   └── README.md
-├── .gitignore
-└── README.md
+Cadastrar automação
+        ↓
+Gerar credencial
+        ↓
+Enviar evento de teste
+        ↓
+Validar integração
+        ↓
+Ativar monitoramento
 ```
 
-## Próximas etapas
+### 2. Tratamento de incidente
 
-O desenvolvimento seguirá o roteiro de Discovery:
+```text
+Receber execução
+        ↓
+Detectar problema
+        ↓
+Criar incidente
+        ↓
+Assumir / investigar
+        ↓
+Analisar com IA
+        ↓
+Registrar resolução
+        ↓
+Encerrar incidente
+```
 
-1. definição do problema;
-2. definição do produto;
-3. especificação;
-4. arquitetura;
-5. revisão do refinamento;
-6. definição do design system;
-7. criação dos protótipos no Stitch.
+## Tecnologia de fronteira
 
-## Roteiro utilizado
+O MVP prevê uma análise assistida por IA integrada ao fluxo real do incidente. A análise usa os dados da execução para gerar resumo, hipóteses, evidências e próximos passos.
+
+A IA é consultiva e não executa correções automaticamente.
+
+## Próximos passos
+
+- criar os protótipos no Stitch;
+- validar os fluxos;
+- iniciar implementação;
+- adicionar testes automatizados;
+- containerizar os serviços;
+- provisionar o ambiente por IaC.
+
+## Roteiro de Discovery
+
+Referência utilizada:
 
 https://github.com/valuedriven/devai/blob/main/.fluxo/roteiro_discovery.md

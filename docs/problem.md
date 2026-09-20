@@ -4,122 +4,112 @@
 
 ### Descrição
 
-Hoje, muitas equipes utilizam diferentes automações e pipelines para executar tarefas importantes do dia a dia. Esses processos podem estar distribuídos entre ferramentas como n8n, serviços da AWS, scripts em Python, bancos de dados e outras plataformas.
+Equipes que trabalham com automações, integrações e pipelines de dados precisam acompanhar diariamente a execução de vários processos. Esses processos podem estar distribuídos entre ferramentas como n8n, serviços em nuvem, scripts em Python, bancos de dados e outras plataformas.
 
-O problema aparece quando alguma dessas automações falha ou começa a apresentar um comportamento fora do esperado. Em muitos casos, é necessário entrar em diferentes ferramentas, consultar logs ou procurar mensagens de erro para entender o que aconteceu.
+O problema aparece quando uma automação falha, demora mais do que deveria ou fica presa em execução. Nesses casos, a pessoa responsável normalmente precisa entrar em diferentes ferramentas, consultar logs e procurar mensagens de erro até entender o que aconteceu.
 
-Quando existem poucas automações, esse acompanhamento ainda pode ser feito manualmente. Porém, conforme a quantidade de processos aumenta, fica mais difícil saber rapidamente quais falharam, quais continuam executando há muito tempo e quais problemas realmente precisam de atenção primeiro.
+Quando existem poucas automações, esse acompanhamento ainda é possível de forma manual. Porém, conforme o número de processos aumenta, fica mais difícil saber rapidamente o que falhou, o que é realmente urgente e quem está acompanhando cada problema.
 
-Dessa forma, o problema identificado neste projeto é a **dificuldade de acompanhar de forma centralizada as falhas e comportamentos anormais de automações e pipelines**.
+Dessa forma, o problema identificado neste projeto é a **dificuldade de acompanhar, priorizar e tratar de forma centralizada falhas e comportamentos anormais em automações e pipelines**.
 
 ### Contexto Atual
 
-As próprias ferramentas de automação já possuem recursos para acompanhar execuções. O n8n, por exemplo, permite consultar se uma execução terminou com sucesso, falhou, continua rodando ou está em espera.
+As próprias ferramentas de automação oferecem recursos de acompanhamento. O n8n, por exemplo, permite consultar execuções com sucesso, falha, em andamento ou em espera. Serviços de orquestração, como o AWS Step Functions, também disponibilizam métricas relacionadas a falhas, duração e timeouts.
 
-Serviços como o AWS Step Functions também possuem métricas relacionadas a falhas, tempo de execução e timeouts.
-
-Mesmo assim, essas informações normalmente ficam dentro de cada plataforma. Em um cenário onde uma equipe utiliza mais de uma ferramenta, o acompanhamento acaba ficando separado.
+Mesmo com esses recursos, as informações continuam concentradas dentro de cada plataforma. Quando uma equipe utiliza mais de uma ferramenta, o acompanhamento fica fragmentado.
 
 Na prática, isso pode exigir ações como:
 
 - consultar manualmente o histórico de uma automação;
-- verificar logs para encontrar a causa de um erro;
-- acompanhar alertas enviados por e-mail ou ferramentas como Teams e Slack;
-- utilizar consultas ou scripts para identificar processos com problema;
-- verificar se alguma automação está executando por mais tempo do que deveria.
+- verificar logs técnicos para encontrar a causa de um erro;
+- acompanhar notificações enviadas por e-mail, Teams ou Slack;
+- utilizar consultas e scripts próprios para localizar processos com problema;
+- verificar se alguma execução está rodando por mais tempo do que o esperado.
 
-Outro ponto é que apenas gerar mais alertas nem sempre resolve o problema. Quando existem muitas notificações e todas parecem ter a mesma importância, a equipe pode ter dificuldade para identificar o que realmente precisa ser tratado primeiro.
+Outro ponto é que apenas gerar mais alertas não resolve necessariamente o problema. Quando tudo gera notificação e todas parecem ter a mesma importância, passa a ser difícil identificar o que realmente precisa ser tratado primeiro.
 
 ### Impactos
 
-Esse cenário pode gerar alguns impactos no trabalho da equipe:
-
 - demora para perceber que uma automação apresentou problema;
-- necessidade de consultar várias ferramentas para entender uma falha;
-- dificuldade para definir quais problemas são mais urgentes;
-- processos importantes podem ficar parados por mais tempo;
-- aumento da quantidade de alertas e mensagens para acompanhar;
-- dificuldade para consultar um histórico de problemas recorrentes.
+- necessidade de consultar várias ferramentas até entender uma falha;
+- dificuldade para priorizar os incidentes;
+- processos importantes podem permanecer parados por mais tempo;
+- excesso de alertas com pouco contexto;
+- dificuldade para saber quem está tratando cada ocorrência;
+- pouca visibilidade sobre falhas recorrentes.
 
 ### Evidências
 
-Durante a pesquisa inicial foi possível encontrar alguns pontos que ajudam a validar o problema.
+A pesquisa inicial encontrou alguns pontos que ajudam a validar o problema:
 
-O n8n possui uma área específica para acompanhamento de execuções, permitindo filtrar resultados como falha, sucesso, execução em andamento e espera. Isso mostra que acompanhar o estado dos workflows é uma necessidade prevista pela própria plataforma.
-
-A AWS também disponibiliza métricas específicas para falhas e timeouts no Step Functions e recomenda que essas métricas sejam monitoradas.
-
-Outro ponto encontrado foi o conceito de *alert fatigue*. A documentação da Microsoft aponta que uma grande quantidade de alertas, principalmente quando não existe uma separação clara por severidade ou contexto, pode dificultar o trabalho de quem precisa responder aos incidentes.
-
-Também existem métricas utilizadas para acompanhar esse tipo de processo, como MTTA (*Mean Time to Acknowledge*) e MTTR (*Mean Time to Resolve*), que ajudam a medir quanto tempo uma equipe leva para reconhecer e resolver um problema.
+- o n8n possui uma área específica para acompanhamento das execuções e permite filtrar estados como falha, sucesso, execução e espera;
+- a AWS disponibiliza métricas específicas para falhas e timeouts em processos orquestrados e recomenda o monitoramento dessas ocorrências;
+- a documentação da Microsoft aborda o conceito de *alert fatigue*, que ocorre quando a quantidade de alertas e a falta de priorização reduzem a efetividade do monitoramento;
+- métricas como MTTA (*Mean Time to Acknowledge*) e MTTR (*Mean Time to Resolve*) são utilizadas para acompanhar a rapidez com que equipes reconhecem e resolvem incidentes.
 
 #### Fontes consultadas
 
-- n8n Docs — All executions: https://docs.n8n.io/workflows/executions/all-executions/
-- AWS Step Functions — Monitoring metrics using Amazon CloudWatch: https://docs.aws.amazon.com/step-functions/latest/dg/procedure-cw-metrics.html
-- Microsoft Learn — Build a monitoring system for Azure workloads: https://learn.microsoft.com/en-us/azure/well-architected/design-guides/monitoring
-- Atlassian — Common Incident Management Metrics: https://www.atlassian.com/incident-management/kpis/common-metrics
+- n8n Docs - All executions: https://docs.n8n.io/workflows/executions/all-executions/
+- AWS Step Functions - Monitoring metrics using Amazon CloudWatch: https://docs.aws.amazon.com/step-functions/latest/dg/procedure-cw-metrics.html
+- Microsoft Learn - Build a monitoring system for Azure workloads: https://learn.microsoft.com/en-us/azure/well-architected/design-guides/monitoring
+- Atlassian - Common Incident Management Metrics: https://www.atlassian.com/incident-management/kpis/common-metrics
 
 ## Objetivo
 
 ### Objetivo Principal
 
-Criar uma forma mais simples de acompanhar problemas em automações e pipelines, reunindo em um único lugar as informações necessárias para identificar o que falhou e o que precisa de atenção.
+Criar uma forma mais simples de acompanhar problemas em automações e pipelines, reunindo em um único lugar as informações necessárias para identificar o que aconteceu, definir prioridade e acompanhar a resolução.
 
 ### Objetivos Específicos
 
 - reunir informações sobre as execuções das automações;
-- facilitar a identificação de falhas e execuções fora do comportamento esperado;
-- permitir uma separação dos problemas por prioridade;
-- disponibilizar informações que ajudem na investigação do erro;
-- manter um histórico das ocorrências;
-- permitir o acompanhamento de indicadores relacionados às automações.
+- identificar falhas, timeouts e execuções com duração acima do esperado;
+- organizar ocorrências por prioridade;
+- fornecer informações que ajudem na investigação;
+- permitir o acompanhamento do status e responsável por cada incidente;
+- manter histórico para identificar problemas recorrentes;
+- disponibilizar indicadores básicos de saúde das automações.
 
 ### Critérios de Sucesso
 
-Inicialmente, o projeto será considerado bem-sucedido se permitir:
+O projeto será considerado bem-sucedido se permitir:
 
-- visualizar as execuções em um único ambiente;
-- identificar rapidamente quais automações apresentam problema;
-- diferenciar ocorrências mais importantes das demais;
-- consultar informações básicas sobre o erro;
-- acompanhar o histórico das ocorrências.
+- visualizar execuções de diferentes automações em um único ambiente;
+- identificar rapidamente as ocorrências que precisam de atenção;
+- acompanhar um incidente desde a detecção até a resolução;
+- consultar contexto suficiente para iniciar uma investigação;
+- reduzir a necessidade de alternar entre várias ferramentas para entender o estado dos processos;
+- acompanhar indicadores como taxa de sucesso, tempo para reconhecimento e tempo para resolução.
 
-Os critérios quantitativos poderão ser definidos posteriormente, durante a etapa de refinamento do produto.
+As metas quantitativas serão validadas durante o MVP, pois ainda não existe uma linha de base medida para comparação.
 
 ## Público-Alvo
 
 ### Perfil Principal
 
-O público principal são profissionais de tecnologia que trabalham diretamente com automações, integrações ou pipelines de dados.
-
-Entre eles estão:
-
-- analistas de dados;
-- engenheiros de dados;
-- desenvolvedores;
-- profissionais responsáveis por operações e processos automatizados.
+Profissionais de tecnologia que trabalham diretamente com automações, integrações e pipelines, principalmente analistas de dados, engenheiros de dados, desenvolvedores e profissionais de operações.
 
 ### Características
 
-São profissionais que normalmente acompanham mais de um processo automatizado e precisam saber quando alguma execução não acontece da forma esperada.
-
-Também possuem conhecimento técnico para entender informações como status de execução, duração e mensagens de erro.
+- acompanham mais de um processo automatizado;
+- precisam saber quando uma execução não acontece da forma esperada;
+- utilizam diferentes ferramentas no mesmo ambiente;
+- possuem conhecimento técnico para interpretar status, duração e mensagens de erro;
+- precisam decidir quais problemas tratar primeiro.
 
 ### Necessidades
 
-As principais necessidades identificadas são:
-
-- saber quando uma automação apresentou problema;
-- entender quais ocorrências precisam de atenção primeiro;
-- evitar a necessidade de consultar várias ferramentas;
+- saber rapidamente quando uma automação apresentou problema;
+- entender quais ocorrências são mais importantes;
+- evitar a consulta constante a várias ferramentas;
 - ter informações suficientes para iniciar a análise de uma falha;
-- consultar problemas que aconteceram anteriormente.
+- acompanhar quem está responsável pela ocorrência;
+- consultar o histórico de problemas anteriores.
 
 ### Restrições
 
-Por se tratar de uma primeira versão do projeto, o escopo precisa ser controlado.
-
-A proposta inicial não é criar integrações completas com todas as ferramentas disponíveis, nem desenvolver um sistema capaz de corrigir automaticamente as falhas.
-
-O foco será centralizar e organizar as informações necessárias para o acompanhamento das automações. As funcionalidades, tecnologias utilizadas e arquitetura serão definidas com mais detalhes nas próximas etapas do Discovery.
+- o MVP precisa manter um escopo viável para o projeto acadêmico;
+- a primeira versão não pretende oferecer integração nativa com todas as ferramentas do mercado;
+- dados sensíveis presentes em logs e payloads não devem ser armazenados sem necessidade;
+- a primeira versão terá foco em monitoramento, priorização e acompanhamento, e não em correção automática dos workflows;
+- integrações e decisões de infraestrutura devem respeitar requisitos de segurança, portabilidade e custo do projeto.
