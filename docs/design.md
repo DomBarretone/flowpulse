@@ -236,17 +236,18 @@ Eventos possíveis:
 
 ### AI Analysis Card
 
-A análise de IA será visualmente diferente de uma informação confirmada pelo sistema.
+A análise gerada pelo modelo de linguagem através do OpenRouter é exibida em um card dedicado, visualmente diferenciado de informações confirmadas pelo sistema para reforçar sua natureza consultiva.
+
+Construído com componentes baseados em shadcn/ui e estilizado com Tailwind CSS.
 
 Estrutura:
-
-- identificação "Análise assistida por IA";
-- resumo;
-- hipóteses;
-- evidências;
-- próximos passos;
-- confiança;
-- aviso de que a análise é consultiva.
+- Badge / cabeçalho com ícone: "Análise Assistida por IA (OpenRouter)";
+- Aviso visual de isenção de responsabilidade: "Recomendação consultiva. A IA não executa remediações automáticas nem altera o status do incidente.";
+- Resumo executivo (`summary`);
+- Hipóteses prováveis de causa-raiz (`likely_causes`);
+- Evidências detectadas nos logs/dados (`evidence`);
+- Próximos passos diagnósticos recomendados (`next_steps`);
+- Indicador visual de nível de confiança (`confidence`, ex: 88%).
 
 ---
 
@@ -272,82 +273,67 @@ O logo/nome do FlowPulse permanece no topo da sidebar.
 
 ### Login
 
-Objetivo: entrada no sistema.
+Objetivo: entrada segura no sistema via Clerk.
 
 Elementos:
-
-- logo/nome;
-- frase curta;
-- botão/fluxo do provedor de identidade;
-- estado de erro.
+- logo e nome do FlowPulse;
+- subtítulo descritivo;
+- componente de autenticação do Clerk (`<SignIn />`) estilizado com Tailwind CSS para harmonizar com a paleta dark do FlowPulse;
+- feedback amigável de redirecionamento e erros de sessão.
 
 ### Dashboard
 
-Objetivo: entender a saúde geral rapidamente.
+Objetivo: visão consolidada e imediata da saúde das automações e incidentes.
 
 Elementos:
-
-- execuções no período;
-- taxa de sucesso;
-- incidentes abertos;
-- críticos;
-- MTTA;
-- MTTR;
-- gráfico de sucesso/falha;
-- incidentes recentes;
-- automações com mais ocorrências.
+- métricas em destaque: total de execuções no período, taxa de sucesso global, incidentes abertos, incidentes críticos, MTTA (tempo médio de reconhecimento) e MTTR (tempo médio de resolução);
+- gráfico de volume de execuções (sucesso vs falha);
+- tabela resumida de incidentes recentes que demandam atenção imediata;
+- ranking de automações com maior índice de instabilidade.
 
 ### Automações
 
-Objetivo: visualizar e administrar processos monitorados.
+Objetivo: listagem e gestão de todos os processos monitorados.
 
 Colunas:
+- nome e descrição;
+- origem (n8n, Python, Step Functions, etc.);
+- criticidade (`LOW`, `MEDIUM`, `HIGH`);
+- status (`DRAFT`, `ACTIVE`, `INACTIVE`);
+- data/hora da última execução recebida;
+- taxa recente de sucesso;
+- responsável padrão;
+- ações (detalhes, gerenciar credenciais, ativar/desativar).
 
-- nome;
-- origem;
-- criticidade;
-- status;
-- última execução;
-- taxa de sucesso;
-- responsável.
+### Nova Automação / Integração (FLUXO 1)
 
-### Nova Automação / Integração
-
-Fluxo em etapas:
-
-1. dados básicos;
-2. criticidade e duração;
-3. gerar credencial;
-4. testar integração;
-5. ativar.
-
-O usuário deve visualizar claramente em qual etapa está.
+Fluxo em etapas (wizard progressivo com indicador de passos):
+1. **Dados Básicos:** nome, descrição, origem;
+2. **Parâmetros Operacionais:** definição de criticidade (`LOW`, `MEDIUM`, `HIGH`) e limite de duração esperada em segundos;
+3. **Geração de Credencial:** backend gera a chave de API e a interface exibe o token em texto plano uma única vez com botão de cópia segura;
+4. **Teste Real da Integração:** instruções de envio, payload de exemplo e escuta ativa de requisição de teste para `POST /api/v1/executions` (`is_test: true`);
+5. **Ativação:** confirmação do recebimento do teste em tempo real e botão para transição imediata para `ACTIVE`.
 
 ### Incidentes
 
-Objetivo: trabalhar a fila de problemas.
+Objetivo: triagem e gestão da fila operacional de incidentes.
 
 Filtros:
-
-- status;
-- severidade;
-- responsável;
+- status (`OPEN`, `ACKNOWLEDGED`, `INVESTIGATING`, `RESOLVED`);
+- severidade (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`);
+- responsável (atribuídos a mim, não atribuídos, todos);
 - automação;
-- período.
+- período de ocorrência.
 
-### Detalhe do Incidente
+### Detalhe do Incidente (FLUXO 2)
 
-Blocos:
-
-1. cabeçalho com título, status e severidade;
-2. dados da execução;
-3. erro/log;
-4. ações;
-5. análise de IA;
-6. timeline;
-7. resolução.
-
-A ação principal muda conforme o estado atual.
+Blocos e disposição:
+1. **Cabeçalho:** identificador do incidente, severidade destacada com badge (cor + texto + ícone), status atual e botões de ação sensíveis ao estado (ex.: "Assumir Incidente", "Iniciar Investigação", "Resolver Incidente");
+2. **Dados da Execução Primária:** automação de origem, horário de início e término, duração calculada, identificador externo de execução;
+3. **Erro e Logs:** tipo do erro (`error_type`), mensagem técnica (`error_message`) em bloco monoespaçado e metadados contextuais em JSON formatado;
+4. **Card de Análise Assistida por IA (OpenRouter):** botão para solicitar análise, seguido pelo card estruturado contendo resumo, causas prováveis, evidências, próximos passos diagnósticos, indicador de confiança e aviso consultivo;
+5. **Linha do Tempo (Timeline):** histórico cronológico de todos os eventos auditáveis (`incident_events`);
+6. **Resolução:** formulário dedicado para inserção da descrição da solução técnica (`resolution_notes`) e confirmação do encerramento do incidente (`RESOLVED`).
 
 ---
 
