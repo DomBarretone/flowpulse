@@ -32,3 +32,47 @@ Este documento registra as principais evidências relacionadas aos requisitos fu
 | Fluxo 1 - Integração de automação | | | Planejado |
 | Fluxo 2 - Tratamento de incidente | | | Planejado |
 | Tecnologia de fronteira - IA | | | Planejado |
+
+## Configuração do Agente
+
+### AGENTS.md
+
+Arquivo criado na raiz do projeto contendo:
+
+- comportamento do agente;
+- stack tecnológica;
+- comandos;
+- qualidade e testes;
+- observabilidade;
+- governança do terminal;
+- uso do Context7;
+- referências da documentação.
+
+### Skills
+
+Skills de desenvolvimento instaladas no diretório `.agents/skills`.
+
+Principais áreas cobertas:
+
+- Next.js e React;
+- NestJS;
+- Prisma;
+- Supabase;
+- Clerk;
+- Terraform;
+- Docker;
+- arquitetura;
+- CI/CD;
+- qualidade.
+
+### MCP Servers
+
+MCPs configurados no Antigravity:
+
+- Stitch;
+- Context7.
+
+Validações realizadas:
+
+- consulta aos projetos do Stitch;
+- consulta de documentação pelo Context7.
