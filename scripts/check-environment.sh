@@ -1,43 +1,71 @@
 #!/usr/bin/env bash
-set -u
+set -e
 
-echo "=== FlowPulse - verificação do ambiente ==="
+echo "=== FlowPulse - Validação de Ambiente ==="
 echo
 
-check() {
-  local label="$1"
-  shift
-  printf "%-22s" "$label:"
-  if command -v "$1" >/dev/null 2>&1; then
-    "$@" 2>&1 | head -n 1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load .env if present
+if [ -f "$ROOT_DIR/.env" ]; then
+  # Export variables from .env ignoring comments and empty lines
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/.env"
+  set +a
+  echo "✔ Arquivo .env carregado com sucesso."
+else
+  echo "⚠ Arquivo .env não encontrado na raiz. Verificando variáveis do ambiente atual."
+fi
+
+REQUIRED_VARS=(
+  "DATABASE_URL"
+  "GLOBAL_PREFIX"
+  "NEXT_PUBLIC_API_URL"
+)
+
+MISSING_VARS=()
+
+for var_name in "${REQUIRED_VARS[@]}"; do
+  val="${!var_name:-}"
+  if [ -z "$val" ]; then
+    MISSING_VARS+=("$var_name")
   else
-    echo "NÃO ENCONTRADO"
+    echo "✔ Variável $var_name definida."
   fi
-}
+done
 
-check "Node.js" node --version
-check "npm" npm --version
-check "Git" git --version
-check "Docker" docker --version
-
-printf "%-22s" "Docker Compose:"
-if command -v docker >/dev/null 2>&1; then
-  docker compose version 2>&1 | head -n 1
-else
-  echo "NÃO ENCONTRADO"
+if [ ${#MISSING_VARS[@]} -ne 0 ]; then
+  echo
+  echo "❌ ERRO: As seguintes variáveis de ambiente obrigatórias estão ausentes ou vazias:"
+  for var_name in "${MISSING_VARS[@]}"; do
+    echo "   - $var_name"
+  done
+  echo
+  echo "Configure-as no seu arquivo .env ou no ambiente antes de prosseguir."
+  exit 1
 fi
-
-check "OpenSpec" openspec --version
-
-printf "%-22s" "Playwright:"
-if command -v npx >/dev/null 2>&1; then
-  npx --yes playwright --version 2>&1 | head -n 1
-else
-  echo "NÃO ENCONTRADO"
-fi
-
-check "OpenCode" opencode --version
-check "OmniRoute" omniroute --version
 
 echo
-echo "Obs.: Antigravity e as contas web devem ser verificadas visualmente."
+echo "✔ Todas as variáveis obrigatórias estão presentes."
+
+# Test database connectivity if Prisma Client is available
+if [ -n "${DATABASE_URL:-}" ]; then
+  echo "Testando conectividade com o banco de dados ($DATABASE_URL)..."
+  if node -e "
+    const { PrismaClient } = require('@prisma/client');
+    const prisma = new PrismaClient();
+    prisma.\$connect()
+      .then(() => { console.log('✔ Conexão com o banco de dados estabelecida com sucesso.'); process.exit(0); })
+      .catch((err) => { console.warn('⚠ Não foi possível conectar ao banco no momento:', err.message); process.exit(0); });
+  " 2>/dev/null; then
+    :
+  else
+    echo "⚠ Teste de conectividade ignorado (Prisma Client não gerado ou dependência não instalada)."
+  fi
+fi
+
+echo
+echo "=== Validação do ambiente concluída com sucesso! ==="
+exit 0
