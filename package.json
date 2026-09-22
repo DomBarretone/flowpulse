@@ -1,27 +1,27 @@
 {
   "name": "flowpulse",
   "version": "1.0.0",
-  "description": "FlowPulse é um projeto aplicado voltado ao acompanhamento de automações e pipelines.",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "private": true,
+  "description": "FlowPulse - Sistema de monitoramento de automações e pipelines",
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently -n \"api,web\" -c \"blue,green\" \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "build": "npm run build --workspaces",
+    "lint": "eslint . && prettier --check \"apps/**/*.{ts,tsx,js,json,css}\"",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run db:generate -w apps/api",
+    "db:migrate": "npm run db:migrate -w apps/api"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/DomBarretone/flowpulse.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/DomBarretone/flowpulse/issues"
-  },
-  "homepage": "https://github.com/DomBarretone/flowpulse#readme",
   "devDependencies": {
-    "@playwright/test": "^1.63.0"
+    "@next/eslint-plugin-next": "^15.5.25",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.21.0",
+    "eslint-config-prettier": "^10.0.2",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.26.0"
   }
 }
