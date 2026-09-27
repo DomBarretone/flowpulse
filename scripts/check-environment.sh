@@ -23,6 +23,8 @@ REQUIRED_VARS=(
   "DATABASE_URL"
   "GLOBAL_PREFIX"
   "NEXT_PUBLIC_API_URL"
+  "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
+  "CLERK_SECRET_KEY"
 )
 
 MISSING_VARS=()
@@ -33,6 +35,20 @@ for var_name in "${REQUIRED_VARS[@]}"; do
     MISSING_VARS+=("$var_name")
   else
     echo "✔ Variável $var_name definida."
+  fi
+done
+
+# Check optional/configurable auth variables
+OPTIONAL_AUTH_VARS=(
+  "CLERK_JWT_KEY"
+  "FLOWPULSE_ADMIN_EMAILS"
+)
+for var_name in "${OPTIONAL_AUTH_VARS[@]}"; do
+  val="${!var_name:-}"
+  if [ -n "$val" ]; then
+    echo "✔ Variável opcional $var_name configurada."
+  else
+    echo "ℹ Variável opcional $var_name não definida (utilizando comportamento padrão)."
   fi
 done
 
@@ -52,7 +68,7 @@ echo "✔ Todas as variáveis obrigatórias estão presentes."
 
 # Test database connectivity if Prisma Client is available
 if [ -n "${DATABASE_URL:-}" ]; then
-  echo "Testando conectividade com o banco de dados ($DATABASE_URL)..."
+  echo "Testando conectividade com o banco de dados..."
   if node -e "
     const { PrismaClient } = require('@prisma/client');
     const prisma = new PrismaClient();
