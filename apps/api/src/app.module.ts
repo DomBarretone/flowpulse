@@ -4,9 +4,20 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 
 import { UsersModule } from './users/users.module';
+import { ApiKeysModule } from './api-keys/api-keys.module';
+import { AutomationsModule } from './automations/automations.module';
+import { IncidentsModule } from './incidents/incidents.module';
+import { ExecutionsModule } from './executions/executions.module';
 
 @Module({
-  imports: [PrismaModule, UsersModule],
+  imports: [
+    PrismaModule,
+    UsersModule,
+    ApiKeysModule,
+    AutomationsModule,
+    IncidentsModule,
+    ExecutionsModule,
+  ],
   controllers: [HealthController],
   providers: [],
 })
