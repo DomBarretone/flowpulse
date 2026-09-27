@@ -1,141 +1,112 @@
 # Proposal: 03-automation-integration
 
-## Objetivo
+## 1. Visão Geral e Objetivo
 
-Implementar o **Fluxo 1** completo: cadastro de automações, geração de credenciais de integração com hash SHA-256, autenticação de sistemas externos via `x-api-key`, recebimento de execuções e criação automática de incidente `OPEN` quando as regras de detecção forem satisfeitas.
+Formalizar a implementação completa do **Fluxo 1 (Integração e Monitoramento de Automações)** do FlowPulse e estabelecer a fronteira arquitetural para o **Fluxo 2 (Tratamento de Incidentes)**.
 
-Este change entrega o pipeline de ingestão ponta a ponta e é o pré-requisito direto para o Fluxo 2 (change 04).
+Permitir que um usuário com papel `ADMIN` autenticado via Clerk:
+1. Cadastre uma nova automação configurando parâmetros operacionais (criticidade e duração esperada);
+2. Gere credenciais de máquina dedicadas (`ApiKey`) criptograficamente seguras com prefixo `fp_live_`;
+3. Visualize o segredo da chave de integração **uma única vez** no momento de sua emissão;
+4. Envie um evento de teste real através do endpoint REST `/api/v1/executions` autenticado via cabeçalho `x-api-key`;
+5. Tenha a execução de teste persistida confiavelmente no PostgreSQL via Prisma;
+6. Veja o estado de integração da automação transitar de `PENDING` para `VALIDATED`;
+7. Ative o monitoramento produtivo da automação (bloqueado enquanto `integration_status != VALIDATED`);
+8. Consulte o histórico de execuções recebidas.
 
----
-
-## Escopo
-
-### Incluído
-
-**Backend (apps/api) — ApiKeyGuard**
-- `ApiKeyGuard`: guard NestJS que extrai o header `x-api-key`, computa o hash SHA-256 e busca correspondência na tabela `api_keys` (status `ACTIVE`)
-- Retorna 401 se a chave for ausente, inválida ou revogada
-- Injeta a `automation_id` correspondente no contexto da requisição para uso nos handlers
-
-**Backend (apps/api) — AutomationsModule**
-- Entidade `Automation` com schema Prisma: `id`, `name`, `description`, `source_type`, `criticality` (LOW/MEDIUM/HIGH), `expected_duration_seconds`, `default_owner_id`, `status` (DRAFT/ACTIVE/INACTIVE), `created_by`, `created_at`, `updated_at`
-- Migration versionada para `automations`
-- `POST /api/v1/automations` — cadastra automação em status `DRAFT` (requer ADMIN)
-- `GET /api/v1/automations` — lista automações com paginação (ADMIN, ANALYST)
-- `GET /api/v1/automations/{id}` — detalhe da automação (ADMIN, ANALYST)
-- `POST /api/v1/automations/{id}/activate` — transita para `ACTIVE` após pelo menos um teste válido recebido (requer ADMIN)
-- Registro de evento em `audit_logs` a cada criação e ativação
-
-**Backend (apps/api) — ApiKeysModule**
-- Entidade `ApiKey` com schema Prisma: `id`, `automation_id`, `key_prefix`, `key_hash` (SHA-256), `status` (ACTIVE/REVOKED), `created_at`, `revoked_at`
-- Migration versionada para `api_keys`
-- `POST /api/v1/automations/{id}/api-keys` — gera credencial: token aleatório com prefixo `fp_live_`, armazena apenas o hash SHA-256, retorna o token completo **uma única vez** (requer ADMIN)
-- `DELETE /api/v1/automations/{id}/api-keys/{keyId}` — revogação da chave (requer ADMIN)
-- Registro de evento em `audit_logs` a cada geração e revogação
-
-**Backend (apps/api) — ExecutionsModule**
-- Entidade `Execution` com schema Prisma: `id`, `automation_id`, `external_execution_id`, `status` (STARTED/SUCCESS/FAILED/TIMEOUT), `started_at`, `finished_at`, `duration_seconds`, `error_type`, `error_message`, `metadata` (JSON), `is_test`, `received_at`
-- Migration versionada para `executions`
-- `POST /api/v1/executions` — autenticado via `x-api-key` (ApiKeyGuard); valida corpo, persiste execução, aplica motor de regras (RN-03/RN-04) e retorna `execution_id` + `incident_id` (quando criado)
-- `GET /api/v1/executions` — listagem com filtros por `automation_id`, `status`, período, `is_test` (ADMIN, ANALYST)
-
-**Backend (apps/api) — Motor de Regras (RN-03 e RN-04)**
-- Criação automática de incidente `OPEN` quando:
-  - `status === FAILED` ou `status === TIMEOUT`
-  - `duration_seconds > expected_duration_seconds` (da automação)
-- Severidade calculada pela tabela RN-04:
-  - Alta + falha/timeout → `CRITICAL`; Alta + duração → `HIGH`
-  - Média + falha/timeout → `HIGH`; Média + duração → `MEDIUM`
-  - Baixa + falha/timeout → `MEDIUM`; Baixa + duração → `LOW`
-- Entidade `Incident` com schema Prisma mínimo: `id`, `automation_id`, `primary_execution_id`, `title`, `severity`, `status` (somente `OPEN` neste change), `error_fingerprint`, `created_at`, `updated_at`
-- Entidade `IncidentEvent` para registro do evento de criação (`CREATED`)
-- **Não implementar** transições de ciclo de vida (ACKNOWLEDGED, INVESTIGATING, RESOLVED) — change 04
-
-**Frontend (apps/web)**
-- Página `/automations` — listagem de automações com status, criticidade e ação de criar
-- Página `/automations/new` — formulário de criação de automação
-- Página `/automations/{id}` — detalhe com: dados da automação, botão de gerar credencial, exibição única da chave gerada, instrução de uso do endpoint de ingestão, botão de ativar monitoramento (após teste bem-sucedido)
-- Página `/executions` — listagem de execuções com filtros básicos
-
-### Excluído
-
-- Transições de ciclo de vida do incidente (ACKNOWLEDGED, INVESTIGATING, RESOLVED) — change 04
-- Análise de IA — change 04
-- Dashboard e métricas MTTA/MTTR — change 05
-- Agrupamento de incidentes por fingerprint (RN-07) — pode entrar neste change ou ser deferido; deve ser decidido na spec
+Adicionalmente, define a fronteira imediata para o Fluxo 2:
+- Quando uma execução real (`is_test: false`) com status `FAILED` for recebida para uma automação ativa (`status: ACTIVE`), o backend cria automaticamente um registro de `Incident` com status inicial `OPEN` e severidade calculada deterministicamente a partir da criticidade da automação.
+- O reenvio idempotente da mesma execução ou execuções de teste (`is_test: true`) nunca produzem incidentes duplicados.
+- Toda a gestão subsequente do ciclo de vida de incidentes (acknowledge, investigate, resolve, IA, OpenRouter, MTTA, MTTR) fica explicitamente delimitada para a change 04.
 
 ---
 
-## Entidades e Migrations
+## 2. Escopo Detalhado
 
-| Entidade | Tabela | Neste change |
-|----------|--------|--------------|
-| Automation | `automations` | ✅ Schema + migration |
-| ApiKey | `api_keys` | ✅ Schema + migration |
-| Execution | `executions` | ✅ Schema + migration |
-| Incident | `incidents` | ✅ Schema mínimo + migration (status OPEN apenas) |
-| IncidentEvent | `incident_events` | ✅ Schema + migration (evento CREATED) |
-| AuditLog | `audit_logs` | ✅ Schema + migration |
+### 2.1 Backend (`apps/api`)
 
----
+#### Modelo de Dados e Persistência (Prisma ORM & PostgreSQL)
+- **Entidade `Automation` (`automations`):**
+  - Campos: `id` (UUID), `name`, `description` (opcional), `owner_id` (FK -> `User.id`), `criticality` (Enum: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), `expected_duration_seconds` (inteiro positivo), `status` (Enum: `DRAFT`, `ACTIVE`, `INACTIVE`), `integration_status` (Enum: `PENDING`, `VALIDATED`, `FAILED`), `created_at`, `updated_at`.
+  - Regras: inicia em `status: DRAFT` e `integration_status: PENDING`. Ativação estritamente bloqueada se `integration_status != VALIDATED`.
+- **Entidade `ApiKey` (`api_keys`):**
+  - Campos: `id` (UUID), `automation_id` (FK -> `Automation.id`), `key_hash` (hash SHA-256 do token completo), `prefix` (prefixo público para identificação, e.g. `fp_live_...`), `created_at`, `revoked_at` (opcional), `last_used_at` (opcional).
+  - Regras: o token bruto gerado nunca é persistido; lookup é realizado exclusivamente por SHA-256 determinístico.
+- **Entidade `Execution` (`executions`):**
+  - Campos: `id` (UUID), `automation_id` (FK -> `Automation.id`), `external_execution_id` (identificador no sistema externo), `status` (Enum: `RUNNING`, `SUCCESS`, `FAILED`, `TIMEOUT`), `started_at`, `finished_at` (opcional), `duration_ms` (opcional), `error_message` (opcional), `is_test` (boolean, default false), `created_at`.
+  - Unicidade e Idempotência: restrição única composta `@@unique([automation_id, external_execution_id])`.
+- **Entidade Mínima `Incident` (`incidents`):**
+  - Campos: `id` (UUID), `automation_id` (FK -> `Automation.id`), `execution_id` (FK -> `Execution.id`, Unique), `status` (Enum: `OPEN`, `ACKNOWLEDGED`, `INVESTIGATING`, `RESOLVED` — com aplicação produzindo estritamente `OPEN`), `severity` (Enum: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), `opened_at`, `created_at`, `updated_at`.
+- **Migrations Versionadas:**
+  - Aplicação de migrations incrementais via `prisma migrate dev`. Proibição estrita de `prisma db push`.
 
-## Contratos de API
+#### Autenticação & Autorização
+- **`ApiKeyGuard`:**
+  - Guard NestJS desacoplado do `ClerkAuthGuard`, atuando exclusivamente em endpoints de ingestão de máquina (`/api/v1/executions`).
+  - Extrai o cabeçalho `x-api-key`, valida o formato (`fp_live_...`), calcula o hash SHA-256, consulta a chave ativa no banco, verifica se não está revogada e vincula a `automation_id` ao contexto da requisição (`request.automation`). Atualiza `last_used_at` de forma assíncrona/transacional.
+  - Chaves ausentes, com formato corrompido, inexistentes ou revogadas retornam `401 Unauthorized` estruturado em RFC 7807 com `request_id`.
+- **`ClerkAuthGuard` + `RolesGuard`:**
+  - Aplicados em todas as rotas de gerenciamento de automações (`/api/v1/automations`).
+  - `ADMIN`: criação, edição, geração de chave, revogação de chave, ativação e desativação.
+  - `ANALYST`: leitura de automações e consulta de execuções.
 
-| Método | Rota | Auth | Papel | Descrição |
-|--------|------|------|-------|-----------|
-| `POST` | `/api/v1/automations` | Clerk JWT | ADMIN | Cadastra automação em DRAFT |
-| `GET` | `/api/v1/automations` | Clerk JWT | ADMIN, ANALYST | Lista automações |
-| `GET` | `/api/v1/automations/{id}` | Clerk JWT | ADMIN, ANALYST | Detalhe da automação |
-| `POST` | `/api/v1/automations/{id}/api-keys` | Clerk JWT | ADMIN | Gera credencial (retorna token uma vez) |
-| `DELETE` | `/api/v1/automations/{id}/api-keys/{keyId}` | Clerk JWT | ADMIN | Revoga credencial |
-| `POST` | `/api/v1/automations/{id}/activate` | Clerk JWT | ADMIN | Ativa monitoramento |
-| `POST` | `/api/v1/executions` | x-api-key | Sistema externo | Ingestão de execução |
-| `GET` | `/api/v1/executions` | Clerk JWT | ADMIN, ANALYST | Lista execuções |
+#### Endpoints REST (`/api/v1`)
+- `POST /api/v1/automations`: cadastro de automação em `DRAFT` / `PENDING` (ADMIN).
+- `GET /api/v1/automations`: listagem paginada e filtrada de automações (ADMIN, ANALYST).
+- `GET /api/v1/automations/:id`: detalhe da automação com status de integração (ADMIN, ANALYST).
+- `PATCH /api/v1/automations/:id`: atualização cadastral de criticidade, nome, descrição e duração (ADMIN).
+- `POST /api/v1/automations/:id/api-keys`: geração de nova credencial; retorna o segredo puro uma única vez (ADMIN).
+- `POST /api/v1/automations/:id/api-keys/:keyId/revoke`: revogação imediata de credencial (ADMIN).
+- `POST /api/v1/automations/:id/activate`: ativação da automação (bloqueada se `integration_status != VALIDATED`) (ADMIN).
+- `POST /api/v1/automations/:id/deactivate`: transição para `INACTIVE` (ADMIN).
+- `POST /api/v1/executions`: ingestão de execução externa autenticada via `x-api-key` (Sistema externo via ApiKeyGuard). Não aceita `automation_id` no payload. Trata reenvios de forma idempotente. Se `is_test: true`, atualiza `integration_status` para `VALIDATED` sem criar incidente. Se `is_test: false` e `status: FAILED` em automação `ACTIVE`, cria `Incident` em `OPEN`.
+- `GET /api/v1/executions`: consulta de histórico de execuções com filtros por automação, status e flag de teste (ADMIN, ANALYST).
 
----
+### 2.2 Frontend (`apps/web`)
 
-## Critério de Conclusão
-
-```bash
-npm run test          # testes unitários e de integração deste change passando
-npm run typecheck     # sem erros
-npm run lint          # sem erros
-npm run build         # sem erros
-```
-
-**Testes unitários:**
-- Motor de regras RN-04: todas as combinações criticidade × tipo de evento produzem a severidade correta
-- Motor de regras RN-03: execução SUCCESS não gera incidente; FAILED, TIMEOUT e estouro de duração geram incidente OPEN
-- `ApiKeyGuard`: hash correto autentica, hash incorreto rejeita com 401, chave revogada rejeita com 401
-- Geração de API Key: token gerado tem prefixo `fp_live_`, banco armazena apenas hash SHA-256
-
-**Testes de integração (Supertest):**
-- `POST /api/v1/automations` sem ADMIN → 403
-- `POST /api/v1/automations` com payload inválido → 422 RFC 7807
-- `POST /api/v1/automations/{id}/api-keys` → 201 com token, banco contém apenas hash
-- `POST /api/v1/executions` sem x-api-key → 401
-- `POST /api/v1/executions` com status FAILED → 201, incidente OPEN criado, `incident_id` retornado
-- `POST /api/v1/executions` com status SUCCESS → 201, `incident_id: null`
-- `POST /api/v1/executions` com `is_test: true` → persiste execução de teste, não bloqueia ativação
-
----
-
-## Não-objetivos
-
-- Agrupamento de incidentes por fingerprint de erro (RN-07) — avaliar na spec
-- Notificações externas (e-mail, mensageria) — versão 1.0
-- Transições de estado do incidente além de OPEN
+- **Listagem de Automações (`/automations`):**
+  - Tabela responsiva com status operacional (`DRAFT`, `ACTIVE`, `INACTIVE`), criticidade, status de integração (`PENDING`, `VALIDATED`, `FAILED`) e ações contextuais.
+- **Formulário de Criação (`/automations/new`):**
+  - Cadastro com validação de nome, descrição, criticidade (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) e duração esperada em segundos.
+- **Detalhes da Automação (`/automations/[id]`):**
+  - Informações cadastrais e operacionais.
+  - Seção de Credenciais de Integração: botão para gerar nova API key (ADMIN), modal/alerta com aviso explícito de visualização única, exibição do segredo `fp_live_...` com botão de copiar seguro, e tabela de chaves ativas/revogadas exibindo apenas prefixo e data.
+  - Guia de Teste de Integração: snippet cURL seguro com instruções de envio de evento de teste (`is_test: true`) usando a API key recém-gerada.
+  - Indicador de status de integração (`PENDING`, `VALIDATED`, `FAILED`) combinando cor, texto e ícone (WCAG 2.1 AA).
+  - Botão de ativação de monitoramento: desabilitado com tooltip explicativo enquanto `integration_status != VALIDATED`, habilitado dinamicamente após validação.
+  - Tabela de execuções recentes recebidas para a automação.
+- **Governança de Segredos no Frontend:**
+  - O segredo da API key é mantido exclusivamente em estado volátil de memória durante a exibição inicial. É terminantemente proibido gravar o segredo em `localStorage`, `sessionStorage`, `cookies` ou emitir em logs do navegador.
 
 ---
 
-## Dependências
+## 3. Fora de Escopo (Non-Goals)
 
-- `02-auth-rbac` (ClerkAuthGuard, RolesGuard, UsersModule ativos)
+1. **Gestão do ciclo de vida de incidentes:** transições para `ACKNOWLEDGED`, `INVESTIGATING` ou `RESOLVED` (pertence à change 04).
+2. **Atribuição e assunção de incidentes por analistas:** (pertence à change 04).
+3. **Análise de causa-raiz assistida por IA via OpenRouter:** (pertence à change 04).
+4. **Dashboard analítico com métricas MTTA e MTTR:** (pertence à change 05).
+5. **OpenTelemetry e tracing distribuído em nível de produção:** (pertence à change 06).
+6. **Testes E2E finais com Playwright:** (pertence à change 06).
+7. **Empacotamento OCI Docker multi-stage e provisionamento Terraform:** (pertence à change 07).
 
 ---
 
-## Referências
+## 4. Tabela de Entidades e Migrations
 
-- `@docs/spec.md` — Seções 3.1 (Fluxo 1), 4 (Regras de Negócio RN-01 a RN-04), 6 (Contratos de API)
-- `@docs/architecture.md` — Chaves de Ingestão (API Keys), Visão de Componentes
-- `@AGENTS.md` — Regras: hash SHA-256, audit_logs, nunca db push
+| Entidade | Tabela | Status neste Change | Descrição |
+|---|---|---|---|
+| `Automation` | `automations` | Nova (Migration versionada) | Entidade de automação monitorada |
+| `ApiKey` | `api_keys` | Nova (Migration versionada) | Credencial de máquina com hash SHA-256 |
+| `Execution` | `executions` | Nova (Migration versionada) | Registro de execuções recebidas |
+| `Incident` | `incidents` | Nova (Migration versionada) | Fronteira do Fluxo 2 (somente status `OPEN`) |
+
+---
+
+## 5. Critérios de Aceite e Verificação
+
+A change é considerada formalizada e apta à aprovação quando:
+1. Todas as especificações delta estiverem concluídas com cenários BDD rastreáveis;
+2. O plano arquitetural detalhar a geração segura de chaves, lookup SHA-256, mecanismo de idempotência e motor de severidade;
+3. O backlog de tarefas decompor a implementação em passos executáveis de tamanho máximo médio;
+4. As suítes de testes unitários, testes de integração Supertest e testes frontend com React Testing Library estiverem especificadas diretamente nas tarefas.
