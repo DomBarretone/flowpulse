@@ -1,114 +1,44 @@
 # Proposal: 06-observability-quality
 
-## Objetivo
+## Why
 
-Elevar a plataforma ao nível de produção em termos de observabilidade, rastreabilidade, acessibilidade e qualidade: instrumentação OpenTelemetry completa, logs JSON estruturados com correlação, auditoria complementar, testes E2E Playwright dos dois fluxos centrais e quality gates aplicados ao CI local.
+O FlowPulse completou as camadas fundamentais de autenticação, ingestão de automações, gestão de incidentes assistida por IA e métricas operacionais, mas ainda opera sem observabilidade técnica integrada, correlação ponta a ponta de rastreabilidade, auditoria operacional estruturada e validação automatizada dos fluxos centrais de negócio. Esta mudança eleva a plataforma ao padrão de maturidade de produção através da instrumentação OpenTelemetry server-side, logs JSON estruturados com correlação entre requisições e spans, conformidade de acessibilidade WCAG 2.1 AA na interface web, testes ponta a ponta Playwright dos fluxos obrigatórios e quality gates locais rigorosos.
 
-Este change **não concentra testes que deveriam existir nos changes anteriores**. Cada change já entregou seus testes unitários e de integração. Aqui o foco é cobertura E2E ponta a ponta, instrumentação de observabilidade e quality gates formalizados.
+## What Changes
 
----
+- **Instrumentação OpenTelemetry no Backend (`apps/api`)**: Inicialização do NodeSDK antes da instanciação do NestJS (`src/tracing.ts` importado no topo de `src/main.ts`), cobrindo rastreamento automático de requisições HTTP inbound (Express), chamadas outbound (Fetch/Undici para OpenRouter e HTTP/HTTPS para Clerk JWKS), queries Prisma ORM (`@prisma/instrumentation`) e propagação de contexto W3C Trace Context (`traceparent`).
+- **Resiliência e Exportação OTLP Configurável**: Configuração do exportador OTLP via variáveis de ambiente (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`), garantindo que o backend inicialize e opere perfeitamente mesmo sem collector local ativo. O endpoint `GET /api/v1/health` permanece desacoplado da disponibilidade do collector.
+- **Correlação de Request ID e Trace ID**: Preservação do `X-Request-ID` (reutilização ou geração de UUID v4) e injeção do header de resposta `X-Trace-ID` derivado do span ativo do OpenTelemetry. Inclusão de `trace_id` no formato RFC 7807 (`ProblemDetailsExceptionFilter`) e atualização das regras de CORS (`allowedHeaders` e `exposedHeaders`).
+- **Logs Estruturados em JSON**: Substituição das saídas textuais do NestJS por um `JsonLoggerService` que emite JSON padronizado com campos obrigatórios (`timestamp`, `level`, `service`, `environment`, `event_name`, `request_id`, `trace_id`) e metadados contextuais seguros.
+- **Sanitização Rigorosa de Logs e Não-Regressão**: Integração do `SanitizerService` na camada de logging para impedir vazamento de senhas, tokens Bearer, JWTs, Clerk secrets, chaves `fp_live_...` e chaves de provedores de IA. Manutenção estrita da proteção contra interpolação direta de mensagens de exceções externas no `OpenRouterService`.
+- **Auditoria Operacional Completa Sem Migrations**: Consolidação do rastreamento de ações administrativas e operacionais (criação/ativação/desativação de automação, geração/revogação de API key, ingestão de execução) por meio de logs de auditoria estruturados correlacionados, complementando os eventos de ciclo de vida já imutavelmente persistidos em `incident_events`. Confirmação explícita de zero alterações no schema do Prisma.
+- **Acessibilidade WCAG 2.1 AA no Frontend (`apps/web`)**: Revisão e conformidade das páginas principais (`/dashboard`, `/automations`, `/automations/[id]`, `/automations/new`, `/incidents`, `/incidents/[id]`), assegurando navegação completa por teclado, indicadores visíveis de foco (`focus-visible`), landmarks semânticos, tabelas acessíveis, badges combinando texto + cor + ícone e gerenciamento de foco no modal de resolução.
+- **Suíte E2E Playwright (`tests/e2e/`)**: Configuração do Playwright com script `npm run test:e2e`, automação de inicialização via `webServer`, captura econômica de artefatos de debug (`trace`, `screenshot`, `video` em caso de falha) e exclusão no `.gitignore`.
+- **E2E Fluxo 1 (Onboarding e Ativação de Automação)**: Teste automatizado cobrindo autenticação, criação de automação com criticidade HIGH, geração de credencial com exibição única em memória, envio de execução de teste (`is_test: true`), validação do status `VALIDATED` e ativação para status `ACTIVE`.
+- **E2E Fluxo 2 (Lifecycle de Incidente e IA Consultiva)**: Teste automatizado cobrindo envio de execução `FAILED` produtiva, detecção de incidente `OPEN`, atribuição ao operador (`ACKNOWLEDGED`), início de investigação (`INVESTIGATING`), solicitação de análise de IA com exibição de card estruturado e aviso consultivo, e resolução com `resolution_notes` obrigatórias validando a timeline completa.
+- **Double Determinístico de Teste para OpenRouter**: Mock HTTP da fronteira externa do OpenRouter executado exclusivamente durante testes E2E via `OPENROUTER_BASE_URL`, preservando o código de produção intacto, consumindo zero créditos externos e validando a integração completa da aplicação com a boundary de IA.
+- **Autenticação Segura no E2E com Clerk**: Configuração de credenciais de teste isoladas via variáveis de ambiente com documentação de placeholders em `.env.example` e preservação de estado de sessão (`storageState`), sem dados sensíveis versionados.
+- **Quality Gates Locais Formalizados**: Consolidação dos gates locais de qualidade (`db:generate`, `db:migrate`, `lint`, `typecheck`, `test`, `test:e2e`, `build`, `docker compose config`), mantendo a execução serializada do Jest na API (`--runInBand`) para estabilidade.
 
-## Escopo
+## Capabilities
 
-### Incluído
+### New Capabilities
 
-**Backend (apps/api) — OpenTelemetry**
-- Inicialização do SDK OpenTelemetry antes dos módulos NestJS (`tracing.ts` carregado via `--require`)
-- Traces automáticos para: requisições HTTP/REST, queries Prisma ORM, chamadas HTTPS externas ao OpenRouter e ao Clerk JWKS
-- Propagação de contexto via header `traceparent` (W3C Trace Context)
-- Middleware global garantindo que toda requisição tenha `request_id` (UUID v4, gerado ou herdado do header `X-Request-ID`) e `trace_id` (extraído do span ativo do OTel)
-- Exportação de telemetria para OpenTelemetry Collector (configurado via `OTEL_EXPORTER_OTLP_ENDPOINT`)
+- `otel-observability`: Instrumentação técnica do backend com OpenTelemetry NodeSDK, propagação W3C Trace Context, injeção de headers de correlação `X-Request-ID` e `X-Trace-ID`, exportação OTLP resiliente e suporte nativo ao Prisma ORM.
+- `structured-logging`: Emissão de logs operacionais em formato JSON estruturado no NestJS com correlação direta a `request_id` e `trace_id`, metadados padronizados e sanitização estrita de segredos e dados sensíveis.
+- `operational-audit`: Garantia de auditabilidade para todas as operações críticas e transições de estado da plataforma, combinando o histórico relacional de `IncidentEvent` com eventos estruturados de log para operações administrativas.
+- `accessibility-quality`: Conformidade de acessibilidade WCAG 2.1 AA nas páginas centrais do frontend, assegurando navegação por teclado, foco visível, contraste, landmarks semânticos e redundância visual de status.
+- `playwright-e2e`: Suíte de testes ponta a ponta Playwright cobrindo os Fluxos de Negócio 1 e 2 na interface web e API, com mock determinístico da fronteira OpenRouter e autenticação Clerk isolada para testes.
+- `quality-gates`: Conjunto canônico de verificações locais de qualidade de código, tipagem, formatação, testes unitários, testes de integração, testes E2E e validação de compose.
 
-**Backend (apps/api) — Logs Estruturados em JSON**
-- Substituição do logger padrão do NestJS por logger JSON (Pino ou equivalente)
-- Campos obrigatórios em todo log: `timestamp`, `level`, `service`, `environment`, `trace_id`, `request_id`, `event_name`
-- Campos sensíveis (tokens, senhas, PII) nunca aparecem em logs — validação por revisão de código e testes de sanitização
+### Modified Capabilities
 
-**Backend (apps/api) — Auditoria Complementar**
-- Revisão e preenchimento de eventuais gaps de `audit_logs` identificados nos changes anteriores
-- Garantia de que todas as operações críticas estão cobertas: cadastro de automação, geração e revogação de chave, ativação de automação, assumir incidente, transições de status, análise de IA solicitada, resolução de incidente
+Nenhuma capability existente tem seus requisitos funcionais alterados. As novas capabilities agregam requisitos normativos de observabilidade, rastreabilidade, qualidade, auditoria e testes ponta a ponta sem modificar os contratos de negócio anteriores.
 
-**Frontend (apps/web) — Acessibilidade**
-- Auditoria WCAG 2.1 AA nas páginas principais: `/dashboard`, `/automations`, `/incidents`, `/incidents/{id}`
-- Garantia de: foco visível em todos os elementos interativos, navegação completa por teclado, indicadores de status com texto + cor + ícone, contraste mínimo 4.5:1, textos alternativos em imagens e ícones
+## Impact
 
-**Testes E2E — Playwright**
-- Configuração do projeto Playwright em `tests/e2e/`
-- **FLUXO 1 E2E:**
-  1. Login ADMIN via Clerk (mock de sessão ou conta de teste)
-  2. Criação de automação com criticidade HIGH e duração esperada
-  3. Geração de credencial (`fp_live_...` exibido, copiado)
-  4. Envio de execução de teste via `POST /api/v1/executions` com `is_test: true`
-  5. Ativação do monitoramento
-  6. Verificação: automação em status ACTIVE na interface
-- **FLUXO 2 E2E:**
-  1. Envio de execução com `status: failed` para automação ACTIVE
-  2. Verificação: incidente OPEN aparece na fila
-  3. Analista assume o incidente (ACKNOWLEDGED)
-  4. Analista inicia investigação (INVESTIGATING)
-  5. Solicita análise de IA (mock do OpenRouter retornando análise estruturada válida)
-  6. Card de análise exibido com aviso consultivo
-  7. Analista registra resolução com `resolution_notes`
-  8. Verificação: incidente em status RESOLVED, timestamps e audit trail presentes
-
-**Quality Gates (locais)**
-- Documentação e execução verificada dos gates:
-  ```bash
-  npm run test && npm run typecheck && npm run lint && npm run build
-  ```
-- `npm run test:e2e` executando os dois fluxos Playwright sem erros
-- Verificação de que nenhuma variável de ambiente secreta aparece nos logs de CI
-
-### Excluído
-
-- Testes unitários e de integração dos módulos dos changes 01–05 (já entregues nos respectivos changes)
-- Configuração de alertas ou dashboards no OpenTelemetry Collector (infraestrutura externa)
-- Análise de cobertura de código (pode ser adicionada como melhoria futura)
-
----
-
-## Entidades e Migrations
-
-| Entidade | Tabela | Neste change |
-|----------|--------|--------------|
-| — | — | Nenhuma nova migration. Ajustes de auditoria são operacionais (dados, não schema). |
-
----
-
-## Critério de Conclusão
-
-```bash
-npm run test          # todos os testes unitários e de integração do projeto passando
-npm run test:e2e      # Playwright: Fluxo 1 e Fluxo 2 passando
-npm run typecheck     # sem erros
-npm run lint          # sem erros
-npm run build         # sem erros
-```
-
-**Verificações adicionais:**
-- `GET /api/v1/health` (ou qualquer endpoint) retorna header `X-Request-ID` e `X-Trace-ID` preenchidos
-- Logs emitidos em JSON válido (verificar amostra manual em ambiente de desenvolvimento)
-- Playwright: ambos os fluxos executam do início ao fim sem intervenção manual
-
----
-
-## Não-objetivos
-
-- Substituir testes unitários/integração dos changes anteriores
-- Configurar plataforma de observabilidade em produção (Grafana, Jaeger etc.) — responsabilidade do change 07 / operação
-- Análise de cobertura percentual de código
-
----
-
-## Dependências
-
-- `05-dashboard-metrics` (todos os módulos implementados e com testes básicos passando)
-
----
-
-## Referências
-
-- `@docs/spec.md` — Seção 9 (Observabilidade e Rastreabilidade), Seção 10 (Critérios Técnicos)
-- `@docs/architecture.md` — OpenTelemetry, Logs Estruturados, Pirâmide de Testes, Qualidade e Estratégia de Testes
-- `@docs/prd.md` — RNF-01 (Acessibilidade WCAG 2.1 AA), RNF-04 (Observabilidade), RNF-05 (Manutenibilidade)
-- `@AGENTS.md` — Seção 7 (Critério de Conclusão), regra de test:e2e obrigatório para Fluxos 1 e 2
+- **Backend (`apps/api`)**: Dependências adicionadas (`@opentelemetry/sdk-node`, `@opentelemetry/auto-instrumentations-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/api`, `@prisma/instrumentation`). Novo módulo `src/tracing.ts` executado no bootstrap da aplicação. Novo `JsonLoggerService` e interceptor de logging HTTP. Atualização de `RequestIdMiddleware`, `ProblemDetailsExceptionFilter` e CORS em `main.ts`.
+- **Frontend (`apps/web`)**: Refinamento de atributos de acessibilidade (`aria-*`, `role`, `focus-visible`, `htmlFor`, semântica de tabelas) nas páginas e componentes principais sem impacto visual destrutivo.
+- **Testes (`tests/e2e`)**: Instalação do `@playwright/test` e dependências auxiliares. Criação da estrutura de testes em `tests/e2e/`, mock da fronteira OpenRouter e configuração do Playwright.
+- **Configuração e CI Local**: Scripts raiz atualizados (`npm run test:e2e`), `.env.example` atualizado com variáveis OTel e E2E, e `.gitignore` atualizado para isolar relatórios e artefatos de teste.
+- **Banco de Dados**: Zero migrations no Prisma. Nenhuma alteração no `schema.prisma`.
