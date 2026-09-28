@@ -42,8 +42,6 @@ A migration incremental SHALL ser aplicada versionada via `prisma migrate dev`.
 - **WHEN** a migration do Prisma é executada
 - **THEN** a tabela `incident_events` é criada com índices em `(incident_id, created_at)` e restrições de integridade referencial com `incidents` e `users`
 
----
-
 ### Requirement: Emissão atômica de eventos em transições e análises
 O backend SHALL garantir que toda alteração de estado no ciclo de vida do incidente registre um evento correspondente na tabela `incident_events` dentro do mesmo bloco transacional da alteração:
 1. Na transição `OPEN → ACKNOWLEDGED`: emitir evento com `event_type: ACKNOWLEDGED`, `from_status: OPEN`, `to_status: ACKNOWLEDGED` e `actor_user_id` preenchido com o usuário autenticado;
@@ -58,8 +56,6 @@ Caso a gravação do evento falhe, a transação inteira SHALL ser revertida (ro
 - **WHEN** a mutação é executada no banco
 - **THEN** o status do incidente é alterado e uma nova linha em `incident_events` é persistida atomicamente com os status de origem e destino corretos
 
----
-
 ### Requirement: Consulta cronológica da trilha de eventos
 O backend SHALL disponibilizar o endpoint `GET /api/v1/incidents/:id/events`, protegido por `ClerkAuthGuard` e `RolesGuard` (`ADMIN` e `ANALYST`), retornando a lista de eventos vinculados ao incidente:
 - A ordenação SHALL ser estritamente cronológica ascendente (`created_at ASC`);
@@ -70,8 +66,6 @@ O backend SHALL disponibilizar o endpoint `GET /api/v1/incidents/:id/events`, pr
 - **GIVEN** um incidente que passou por assunção e início de investigação
 - **WHEN** um usuário autenticado envia `GET /api/v1/incidents/:id/events`
 - **THEN** a API retorna status `200 OK` com a lista ordenada contendo os eventos `ACKNOWLEDGED` e `INVESTIGATION_STARTED`
-
----
 
 ### Requirement: Imutabilidade e expurgo de credenciais sensíveis na trilha de eventos
 Os registros da tabela `incident_events` SHALL ser estritamente imutáveis:

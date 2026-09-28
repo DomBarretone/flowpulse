@@ -52,15 +52,26 @@ enum IncidentSeverity {
   CRITICAL
 }
 
+enum IncidentEventType {
+  ACKNOWLEDGED
+  INVESTIGATION_STARTED
+  AI_ANALYSIS_REQUESTED
+  AI_ANALYSIS_COMPLETED
+  RESOLVED
+}
+
 model User {
-  id            String       @id @default(uuid())
-  clerk_user_id String       @unique
-  email         String       @unique
-  name          String
-  role          Role         @default(ANALYST)
-  created_at    DateTime     @default(now())
-  updated_at    DateTime     @updatedAt
-  automations   Automation[]
+  id                 String          @id @default(uuid())
+  clerk_user_id      String          @unique
+  email              String          @unique
+  name               String
+  role               Role            @default(ANALYST)
+  created_at         DateTime        @default(now())
+  updated_at         DateTime        @updatedAt
+  automations        Automation[]
+  assigned_incidents Incident[]      @relation("AssignedIncidents")
+  incident_events    IncidentEvent[]
+  ai_analyses        AiAnalysis[]
 
   @@map("users")
 }
@@ -121,18 +132,65 @@ model Execution {
 }
 
 model Incident {
-  id            String           @id @default(uuid())
-  automation_id String
-  execution_id  String           @unique
-  status        IncidentStatus   @default(OPEN)
-  severity      IncidentSeverity
-  opened_at     DateTime         @default(now())
-  created_at    DateTime         @default(now())
-  updated_at    DateTime         @updatedAt
+  id               String           @id @default(uuid())
+  automation_id    String
+  execution_id     String           @unique
+  status           IncidentStatus   @default(OPEN)
+  severity         IncidentSeverity
+  assigned_to_id   String?
+  opened_at        DateTime         @default(now())
+  acknowledged_at  DateTime?
+  investigating_at DateTime?
+  resolved_at      DateTime?
+  resolution_notes String?          @db.Text
+  created_at       DateTime         @default(now())
+  updated_at       DateTime         @updatedAt
 
-  automation    Automation       @relation(fields: [automation_id], references: [id], onDelete: Cascade)
-  execution     Execution        @relation(fields: [execution_id], references: [id], onDelete: Cascade)
+  automation       Automation       @relation(fields: [automation_id], references: [id], onDelete: Cascade)
+  execution        Execution        @relation(fields: [execution_id], references: [id], onDelete: Cascade)
+  assigned_to      User?            @relation("AssignedIncidents", fields: [assigned_to_id], references: [id], onDelete: SetNull)
+  events           IncidentEvent[]
+  ai_analyses      AiAnalysis[]
 
   @@index([automation_id, status])
+  @@index([assigned_to_id, status])
   @@map("incidents")
+}
+
+model IncidentEvent {
+  id            String            @id @default(uuid())
+  incident_id   String
+  actor_user_id String?
+  event_type    IncidentEventType
+  from_status   IncidentStatus?
+  to_status     IncidentStatus?
+  note          String?           @db.Text
+  created_at    DateTime          @default(now())
+
+  incident      Incident          @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+  actor         User?             @relation(fields: [actor_user_id], references: [id], onDelete: SetNull)
+
+  @@index([incident_id, created_at])
+  @@map("incident_events")
+}
+
+model AiAnalysis {
+  id                  String   @id @default(uuid())
+  incident_id         String
+  requested_by_id     String
+  model               String
+  summary             String   @db.Text
+  likely_causes       Json
+  evidence            Json
+  next_steps          Json
+  confidence          Decimal  @db.Decimal(3, 2)
+  provider_request_id String?
+  latency_ms          Int?
+  created_at          DateTime @default(now())
+
+  incident            Incident @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+  requested_by        User     @relation(fields: [requested_by_id], references: [id], onDelete: Cascade)
+
+  @@index([incident_id, created_at])
+  @@map("ai_analyses")
 }

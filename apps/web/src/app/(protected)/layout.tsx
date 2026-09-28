@@ -35,6 +35,12 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           >
             Automações
           </Link>
+          <Link
+            href="/incidents"
+            className="text-sm text-zinc-400 hover:text-zinc-200 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded px-2 py-1"
+          >
+            Incidentes
+          </Link>
           <div className="pl-2 border-l border-zinc-800">
             <UserButton
               appearance={{

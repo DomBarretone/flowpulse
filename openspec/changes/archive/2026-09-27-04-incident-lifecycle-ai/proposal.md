@@ -1,6 +1,6 @@
 # Proposal: 04-incident-lifecycle-ai
 
-## Objetivo
+## Why
 
 Formalizar e implementar integralmente o **Fluxo 2** do FlowPulse: o ciclo de vida completo de tratamento de incidentes operacionais a partir de uma ocorrência `OPEN` existente (gerada pela change 03), percorrendo assunção (`ACKNOWLEDGED`), investigação (`INVESTIGATING`), solicitação e retorno de diagnóstico estruturado via integração real com o **OpenRouter** (`AiAnalysis`), registro obrigatório de notas de solução e encerramento definitivo (`RESOLVED`).
 
@@ -8,7 +8,7 @@ A inteligência artificial nesta change é **estritamente consultiva**: apoia o 
 
 ---
 
-## Escopo
+## What Changes
 
 ### Incluído
 

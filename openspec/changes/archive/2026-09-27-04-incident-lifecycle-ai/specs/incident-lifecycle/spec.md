@@ -4,7 +4,7 @@
 
 Define os requisitos, regras de negócio e restrições técnicas para a evolução da entidade `Incident`, a máquina de estados linear determinística, a concorrência atômica, a governança de atribuição e ownership (RBAC) e a resolução obrigatória com notas explicativas para o ciclo de vida de incidentes operacionais do FlowPulse.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Extensão do modelo relacional da entidade Incident
 O schema Prisma (`apps/api/prisma/schema.prisma`) SHALL evoluir o modelo `Incident` adicionando os seguintes campos de ciclo de vida com compatibilidade retroativa para registros pré-existentes:

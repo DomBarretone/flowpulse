@@ -26,8 +26,6 @@ O frontend Next.js 15 SHALL disponibilizar a rota `/incidents` (sob o layout pro
 - **WHEN** o operador acessa `/incidents` e seleciona o filtro `Status: OPEN`
 - **THEN** a tabela exibe exclusivamente os incidentes em aberto, indicando visualmente ausência de responsável e severidade com tripla codificação (texto + cor + ícone)
 
----
-
 ### Requirement: Visão detalhada de incidente e ações contextuais por estado
 O frontend SHALL disponibilizar a rota `/incidents/[id]` contendo:
 1. **Painel de Dados:** Identificador do incidente, criticidade da automação, severidade do incidente, execução causadora com mensagem de erro exibida em bloco de código monoespaçado devidamente sanitizado e timestamps operacionais;
@@ -46,8 +44,6 @@ O frontend SHALL disponibilizar a rota `/incidents/[id]` contendo:
 - **GIVEN** a página de detalhe de um incidente com status `OPEN`
 - **WHEN** o analista clica no botão "Assumir Incidente"
 - **THEN** o botão exibe estado de loading, a requisição `POST /api/v1/incidents/:id/acknowledge` é enviada, a tela é atualizada para o status `ACKNOWLEDGED` e o botão passa a ser "Iniciar Investigação"
-
----
 
 ### Requirement: Modal acessível de resolução com validação de notas
 Ao clicar no botão "Resolver Incidente" (em status `INVESTIGATING`), a interface SHALL abrir um modal acessível de confirmação e preenchimento:
@@ -69,8 +65,6 @@ Ao clicar no botão "Resolver Incidente" (em status `INVESTIGATING`), a interfac
 - **WHEN** o operador digita uma explicação com mais de 10 caracteres e clica em "Confirmar Resolução"
 - **THEN** a requisição é concluída com sucesso, o modal é fechado e a tela exibe o incidente como `RESOLVED` com as notas gravadas
 
----
-
 ### Requirement: Painel de análise assistida por IA com identificador consultivo
 A página de detalhe do incidente SHALL incluir uma seção dedicada para visualização do diagnóstico assistido por inteligência artificial:
 1. **Identificação e Caráter Consultivo:**
@@ -91,8 +85,6 @@ A página de detalhe do incidente SHALL incluir uma seção dedicada para visual
 - **GIVEN** um incidente com análise de IA concluída
 - **WHEN** o analista visualiza a seção de análise de IA
 - **THEN** o painel exibe o aviso de caráter consultivo, o resumo, causas prováveis, evidências e próximos passos, com grau de confiança e modelo utilizado
-
----
 
 ### Requirement: Linha do tempo visual de eventos e conformidade WCAG 2.1 AA
 A interface de incidentes SHALL garantir plena acessibilidade e rastreabilidade:

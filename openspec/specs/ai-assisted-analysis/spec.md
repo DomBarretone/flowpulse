@@ -38,8 +38,6 @@ A migration incremental SHALL ser aplicada versionada via `prisma migrate dev`.
 - **WHEN** uma resposta válida de diagnóstico é recebida do OpenRouter
 - **THEN** uma nova linha na tabela `ai_analyses` é criada vinculada ao incidente e ao usuário solicitante, contendo os campos estruturados em formato Json e a confiança numérica
 
----
-
 ### Requirement: Integração real server-side com OpenRouter API
 O backend NestJS SHALL implementar `OpenRouterService` dedicado para comunicação HTTP direta com a API do OpenRouter:
 1. Endpoint externo: `POST https://openrouter.ai/api/v1/chat/completions` (ou `${OPENROUTER_BASE_URL}/chat/completions`);
@@ -53,8 +51,6 @@ O backend NestJS SHALL implementar `OpenRouterService` dedicado para comunicaç�
 - **GIVEN** uma chave de API válida configurada no ambiente
 - **WHEN** o serviço invoca o endpoint de chat completions com o payload preparado
 - **THEN** a requisição é autenticada e a resposta do modelo é recebida dentro do tempo limite de 15 segundos
-
----
 
 ### Requirement: Structured output estrito com JSON Schema e validação no backend
 A chamada ao OpenRouter SHALL utilizar structured output garantido via parâmetro `response_format` configurado com JSON Schema estrito e diretiva de provider `require_parameters: true`:
@@ -80,8 +76,6 @@ A chamada ao OpenRouter SHALL utilizar structured output garantido via parâmetr
 - **WHEN** o OpenRouter responde com JSON ausente de `likely_causes` ou `confidence` fora do intervalo 0–1
 - **THEN** o validador interno rejeita os dados, nenhuma linha é gravada em `ai_analyses` e um erro `503` RFC 7807 é retornado ao solicitante
 
----
-
 ### Requirement: Sanitização determinística pré-envio de dados à IA
 O backend SHALL executar rotina determinística de sanitização (`SanitizerService`) sobre todas as informações de texto livre e mensagens de erro (`error_message`) ANTES da construção da mensagem a ser enviada ao OpenRouter:
 1. Padrões identificados e redigidos por `[REDACTED]`:
@@ -104,8 +98,6 @@ O backend SHALL executar rotina determinística de sanitização (`SanitizerServ
 - **WHEN** o contexto para IA é gerado
 - **THEN** o texto enviado ao modelo contém `"Connection failed with [REDACTED] and [REDACTED]"` comprovando o expurgo de credenciais
 
----
-
 ### Requirement: Invocação controlada da análise e governança de acesso
 O backend SHALL expor os seguintes endpoints sob `/api/v1/incidents/:id/ai-analysis` e `/api/v1/incidents/:id/ai-analyses`:
 1. `POST /api/v1/incidents/:id/ai-analysis`:
@@ -125,8 +117,6 @@ O backend SHALL expor os seguintes endpoints sob `/api/v1/incidents/:id/ai-analy
 - **GIVEN** um incidente em status `OPEN`
 - **WHEN** qualquer usuário invoca `POST /api/v1/incidents/:id/ai-analysis`
 - **THEN** a requisição é rejeitada com HTTP `409 Conflict` RFC 7807 e nenhuma chamada externa é disparada
-
----
 
 ### Requirement: Resiliência operacional, timeout e não-bloqueio de falhas
 O fluxo de análise assistida por IA SHALL ser totalmente desacoplado da integridade operacional do incidente:
