@@ -8,6 +8,7 @@ import { ApiKeysModule } from './api-keys/api-keys.module';
 import { AutomationsModule } from './automations/automations.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { ExecutionsModule } from './executions/executions.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { ExecutionsModule } from './executions/executions.module';
     AutomationsModule,
     IncidentsModule,
     ExecutionsModule,
+    DashboardModule,
   ],
   controllers: [HealthController],
   providers: [],

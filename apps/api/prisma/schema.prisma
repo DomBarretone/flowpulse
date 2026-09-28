@@ -128,6 +128,7 @@ model Execution {
 
   @@unique([automation_id, external_execution_id])
   @@index([automation_id, created_at])
+  @@index([created_at, status])
   @@map("executions")
 }
 
@@ -154,6 +155,7 @@ model Incident {
 
   @@index([automation_id, status])
   @@index([assigned_to_id, status])
+  @@index([opened_at, status])
   @@map("incidents")
 }
 
