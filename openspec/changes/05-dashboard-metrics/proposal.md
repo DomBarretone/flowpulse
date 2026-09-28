@@ -1,111 +1,77 @@
 # Proposal: 05-dashboard-metrics
 
-## Objetivo
+## Why
 
-Implementar o dashboard operacional com visão consolidada das automações, cálculo de métricas MTTA e MTTR, resumo de incidentes por status e severidade, e filtros temporais — entregando o requisito RF-07 e os indicadores de produto definidos no PRD.
+O FlowPulse consolidou nas changes anteriores a fundação técnica (`01-project-foundation`), o controle de acesso e identidade via Clerk e RBAC (`02-auth-rbac`), a ingestão resiliente de execuções com geração automática de incidentes (`03-automation-integration`) e o ciclo completo de tratamento de incidentes com análise assistida por IA (`04-incident-lifecycle-ai`).
 
----
+No entanto, a rota `/dashboard` no frontend Next.js permanece como uma tela provisória de verificação de identidade e credenciais de acesso, sem exibir informações operacionais reais das automações monitoradas.
 
-## Escopo
+Esta change transforma `/dashboard` em um painel operacional completo, ágil e focado na tomada de decisão de engenheiros e analistas de suporte (`ADMIN` e `ANALYST`), atendendo ao requisito **RF-07** do PRD e às métricas operacionais essenciais do FlowPulse (MTTA, MTTR, taxa de sucesso e volume temporal de execuções), utilizando exclusivamente os dados persistidos no PostgreSQL via Prisma ORM, sem recorrer a métricas simuladas ou chamadas custosas ao modelo de IA.
 
-### Incluído
+## What Changes
 
-**Backend (apps/api) — DashboardModule**
-- `GET /api/v1/dashboard/summary` — endpoint de indicadores operacionais agregados (ADMIN, ANALYST):
-  - `total_executions`: total de execuções no período
-  - `success_rate`: percentual de execuções com status `SUCCESS`
-  - `failure_count`: total de execuções `FAILED` + `TIMEOUT`
-  - `open_incidents`: total de incidentes com status `OPEN` ou `ACKNOWLEDGED` ou `INVESTIGATING`
-  - `critical_incidents`: total de incidentes com `severity === CRITICAL` e status não `RESOLVED`
-  - `mtta_seconds_avg`: média de `acknowledged_at - created_at` para incidentes com `acknowledged_at` preenchido no período
-  - `mttr_seconds_avg`: média de `resolved_at - created_at` para incidentes `RESOLVED` no período
-- Suporte a filtro por período (`from`, `to` em ISO 8601) como query params
-- Cálculo realizado com queries Prisma agregadas (sem lógica de negócio no frontend)
-- Respostas em cache leve via `Cache-Control: max-age=30` (sem Redis, apenas header HTTP)
+### 1. Backend (`apps/api`) — Módulo de Métricas e Agregações (`DashboardModule`)
+- **Novo Endpoint REST Unificado:** `GET /api/v1/dashboard/metrics?period=7d`
+  - Protegido por `ClerkAuthGuard` e `RolesGuard` para papéis `ADMIN` e `ANALYST`.
+  - Suporte aos períodos padronizados `period=24h`, `period=7d` e `period=30d` (default: `7d`).
+  - Validação estrita via `ValidationPipe` retornando `422 Unprocessable Entity` (RFC 7807) para períodos inválidos.
+  - Resposta unificada e agregada contendo resumo de indicadores, série temporal de execuções, distribuição de incidentes por status e severidade, e incidentes recentes prioritários.
+- **Cálculo de Indicadores Operacionais (Summary):**
+  - `active_automations`: total de automações com `Automation.status === ACTIVE` (estado atual global, independente de período).
+  - `executions`: contagem de execuções criadas dentro da janela temporal selecionada (`Execution.created_at >= start_time`).
+  - `success_rate`: percentual de execuções com status `SUCCESS` sobre o total de execuções finalizadas relevantes (`SUCCESS + FAILED + TIMEOUT`). Execuções em `RUNNING` não entram no cálculo. Caso o total concluído seja zero, retorna `null` (evitando divisões por zero ou valores `NaN`/`Infinity`).
+  - `failures`: total de execuções no período com status `FAILED` ou `TIMEOUT`.
+  - `open_incidents`: total de incidentes ativos no backlog (`OPEN`, `ACKNOWLEDGED`, `INVESTIGATING`), excluindo `RESOLVED`.
+  - `mtta_seconds`: Mean Time To Acknowledge, computado pela média de `acknowledged_at - opened_at` para incidentes cujo `opened_at` está no período e possuem `acknowledged_at` não nulo. Retornado em segundos na API. Caso não haja incidentes elegíveis, retorna `null` (nunca zero para incidentes não reconhecidos).
+  - `mttr_seconds`: Mean Time To Resolve, computado pela média de `resolved_at - opened_at` para incidentes cujo `opened_at` está no período e possuem `resolved_at` não nulo. Retornado em segundos na API. Caso não haja incidentes elegíveis, retorna `null` (nunca zero para incidentes não resolvidos).
+- **Série Temporal de Execuções (`execution_series`):**
+  - Agrupamento temporal no PostgreSQL (`date_trunc`): por hora para `period=24h` e por dia para `period=7d` e `period=30d`.
+  - Estrutura de cada bucket: `timestamp` (ISO 8601 UTC), `total`, `success`, `failed`, `timeout`.
+  - Preenchimento determinístico no backend de buckets sem execuções com valor `0` para assegurar continuidade visual no gráfico sem descontinuidade na timeline.
+- **Distribuição de Incidentes:**
+  - `incidents_by_status`: contagem do estado atual global em `OPEN`, `ACKNOWLEDGED`, `INVESTIGATING` e `RESOLVED`.
+  - `open_incidents_by_severity`: contagem restrita a incidentes não resolvidos (`status != RESOLVED`) por severidade: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`.
+- **Fila de Incidentes Recentes Prioritários (`recent_incidents`):**
+  - Consulta aos 5 incidentes mais críticos com ordenação: (1) não resolvidos primeiro, (2) maior severidade primeiro (`CRITICAL > HIGH > MEDIUM > LOW`), (3) `opened_at` mais recente.
+  - Campos expostos: `id`, `status`, `severity`, dados da automação (`id`, `name`), `opened_at` e dados do responsável atribuído (`id`, `name`, `email` ou `null`).
+- **Otimizações de Banco e Índices:**
+  - Agregações realizadas no banco via queries SQL parametrizadas / Prisma nativo, evitando carregar grandes volumes de registros para a memória da aplicação.
+  - Migration incremental Prisma adicionando índices compostos dedicados para filtros de data e status (`executions(created_at, status)` e `incidents(opened_at, status)`).
 
-**Backend (apps/api) — Filtros e Consultas Avançadas**
-- `GET /api/v1/incidents` — extensão: filtros por `from`, `to` (período), suporte a paginação com `cursor` ou `page`/`limit`
-- `GET /api/v1/executions` — extensão: filtros por `from`, `to` (período)
+### 2. Frontend (`apps/web`) — Painel Operacional Acessível (`/dashboard`)
+- Substituição da página atual de credenciais por um dashboard operacional com alta hierarquia de informação e paleta dark do FlowPulse.
+- **Cabeçalho e Controles:**
+  - Título do dashboard, contexto operacional e seletor de períodos (24h, 7d, 30d).
+  - Persistência do período via query parameter na URL (`?period=24h`) com recarregamento reativo e prevenção de requisições duplicadas.
+- **Cards de Métricas:**
+  - 7 cards principais: Automações Ativas, Execuções no Período, Taxa de Sucesso, Falhas, Incidentes Abertos, MTTA e MTTR.
+  - Formatação amigável de tempo para MTTA e MTTR (ex: `45s`, `3m 20s`, `1h 12m`).
+  - Tratamento visual explícito para valores nulos (`—`) sem nunca exibir `NaN`, `Infinity` ou `undefined`.
+- **Visualização da Série Temporal (Gráfico de Execuções):**
+  - Componente gráfico nativo e acessível (SVG/HTML sem dependência de bibliotecas pesadas), ilustrando o volume de execuções com separação de Sucesso, Falhas e Timeouts.
+  - Acessibilidade WCAG 2.1 AA: legenda interativa, tooltips com dados precisos, contraste visual e dupla codificação sem depender apenas de cores.
+- **Distribuição Visual de Incidentes:**
+  - Barras horizontais para distribuição por status (visão geral do backlog e resoluções).
+  - Barras horizontais para distribuição por severidade dos incidentes abertos (foco na carga operacional de alta criticidade).
+- **Tabela de Incidentes Recentes:**
+  - Listagem dos 5 incidentes prioritários com badges semânticas (texto + cor + ícone), indicação de tempo relativo e link direto para `/incidents/:id`.
+- **Resiliência e Estados da UI:**
+  - Skeleton screens em loading.
+  - Empty states informativos quando não houver registros no período.
+  - Tratamento de falhas RFC 7807 com mensagem amigável e botão de retentativa.
 
-**Frontend (apps/web)**
-- Página `/dashboard` com cards de indicadores:
-  - Total de execuções (período selecionável)
-  - Taxa de sucesso (percentual + tendência visual)
-  - Incidentes abertos (count com breakdown por severidade)
-  - Incidentes críticos (count em destaque)
-  - MTTA médio (formatado em minutos/horas)
-  - MTTR médio (formatado em minutos/horas)
-- Seletor de período (últimas 24h, 7 dias, 30 dias, intervalo customizado)
-- Lista de incidentes recentes com link para detalhe
-- Navegação lateral com links para `/automations`, `/executions`, `/incidents`
-- Acessibilidade WCAG 2.1 AA: status combinando texto + cor + ícone em todos os cards e listas
+## Capabilities
 
-### Excluído
+### New Capabilities
+- `dashboard-metrics`: Serviço backend e endpoint REST (`GET /api/v1/dashboard/metrics`) fornecendo métricas operacionais consolidadas, agregações temporais, MTTA, MTTR, distribuições e incidentes prioritários.
+- `dashboard-ui`: Painel operacional no frontend Next.js (`apps/web`) em `/dashboard`, com cards de métricas, seletor de período, gráfico de volume temporal de execuções acessível, distribuições de incidentes e atalhos contextuais.
 
-- Gráficos temporais (chart de séries temporais) — pode ser considerado em versão futura
-- Alertas configuráveis — versão 1.0
-- Exportação de dados (CSV, PDF) — fora do MVP
-- Redis ou cache distribuído para os indicadores
+### Modified Capabilities
+<!-- Nenhuma capability existente tem seus requisitos modificados nesta change. As capacidades de automação, ciclo de vida de incidentes e autenticação permanecem estáveis. -->
 
----
+## Impact
 
-## Entidades e Migrations
-
-| Entidade | Tabela | Neste change |
-|----------|--------|--------------|
-| — | — | Nenhuma nova entidade. Os cálculos de MTTA/MTTR usam `acknowledged_at` e `resolved_at` já existentes em `incidents`. |
-
----
-
-## Contratos de API
-
-| Método | Rota | Auth | Papel | Descrição |
-|--------|------|------|-------|-----------|
-| `GET` | `/api/v1/dashboard/summary` | Clerk JWT | ADMIN, ANALYST | Indicadores operacionais agregados |
-
-Query params suportados: `from` (ISO 8601), `to` (ISO 8601).
-
----
-
-## Critério de Conclusão
-
-```bash
-npm run test          # testes unitários e de integração deste change passando
-npm run typecheck     # sem erros
-npm run lint          # sem erros
-npm run build         # sem erros
-```
-
-**Testes unitários:**
-- `DashboardService.computeMTTA()`: incidentes sem `acknowledged_at` não contam na média; média calculada corretamente sobre o conjunto com valor preenchido
-- `DashboardService.computeMTTR()`: incidentes sem `resolved_at` não contam; cálculo correto sobre `RESOLVED`
-- `DashboardService.getSummary()`: filtro de período é aplicado a todas as queries (execuções e incidentes)
-- Cálculo de `success_rate`: zero execuções no período retorna `null` (não divisão por zero)
-
-**Testes de integração (Supertest):**
-- `GET /api/v1/dashboard/summary` sem autenticação → 401
-- `GET /api/v1/dashboard/summary` com ANALYST → 200 com estrutura completa dos indicadores
-- `GET /api/v1/dashboard/summary?from=2026-01-01&to=2026-01-31` → indicadores restritos ao período
-- Consistência: `open_incidents` bate com count real de `GET /api/v1/incidents?status=OPEN`
-
----
-
-## Não-objetivos
-
-- Gráficos com séries temporais
-- Alertas ou notificações a partir dos indicadores
-- Cache distribuído
-
----
-
-## Dependências
-
-- `04-incident-lifecycle-ai` (campos `acknowledged_at`, `resolved_at`, `resolution_notes` em `incidents`, entidades `ai_analyses` estáveis)
-
----
-
-## Referências
-
-- `@docs/prd.md` — RF-07 (Dashboard e indicadores), Métricas de Produto e de Operação
-- `@docs/spec.md` — Seção 6 (GET /api/v1/dashboard/summary), RF-10 (Consulta e filtros)
-- `@docs/architecture.md` — Adequação Funcional (Fonte Única da Verdade)
+- **APIs e Contratos:** Adição do endpoint `GET /api/v1/dashboard/metrics`. Nenhuma alteração retroativa em endpoints existentes de `/api/v1/automations`, `/api/v1/executions` ou `/api/v1/incidents`.
+- **Banco de Dados (PostgreSQL / Supabase):** Nenhuma alteração destrutiva em tabelas. Adição de índices recomendados via migration versionada Prisma (`prisma migrate dev`) para otimização de consultas por intervalo temporal e status.
+- **Frontend:** Atualização da página `/dashboard` no layout autenticado `(protected)`. Componentes existentes de navegação, badge e autenticação permanecem inalterados.
+- **Dependências Externas:** Zero novas dependências de pacotes pesados no frontend ou backend; cálculos executados nativamente no PostgreSQL e gráficos renderizados com SVG/CSS responsivo e semântico.
