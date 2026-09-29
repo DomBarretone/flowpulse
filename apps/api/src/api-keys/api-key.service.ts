@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiKey, Automation } from '@prisma/client';
+import { JsonLoggerService } from '../common/logging/json-logger.service';
 
 export interface GeneratedApiKeyResponse {
   id: string;
@@ -14,7 +15,10 @@ export type SafeApiKey = Omit<ApiKey, 'key_hash'>;
 
 @Injectable()
 export class ApiKeyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly logger: JsonLoggerService = new JsonLoggerService(),
+  ) {}
 
   generateRawKey(): string {
     const randomHex = crypto.randomBytes(32).toString('hex');
@@ -44,6 +48,13 @@ export class ApiKeyService {
         key_hash: keyHash,
         prefix,
       },
+    });
+
+    this.logger.log({
+      event_name: 'api_key_generated',
+      automation_id: automationId,
+      key_id: apiKey.id,
+      prefix: apiKey.prefix,
     });
 
     return {
@@ -77,6 +88,13 @@ export class ApiKeyService {
         revoked_at: true,
         last_used_at: true,
       },
+    });
+
+    this.logger.log({
+      event_name: 'api_key_revoked',
+      automation_id: automationId,
+      key_id: keyId,
+      prefix: updated.prefix,
     });
 
     return updated as SafeApiKey;

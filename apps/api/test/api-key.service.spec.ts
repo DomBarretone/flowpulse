@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { ApiKeyService } from '../src/api-keys/api-key.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { JsonLoggerService } from '../src/common/logging/json-logger.service';
 
 describe('ApiKeyService', () => {
   let service: ApiKeyService;
@@ -16,6 +17,7 @@ describe('ApiKeyService', () => {
     };
   };
   let mockPrisma: MockApiKeyPrisma;
+  let mockLogger: { log: jest.Mock; error: jest.Mock; warn: jest.Mock; debug: jest.Mock };
 
   beforeEach(() => {
     mockPrisma = {
@@ -31,7 +33,17 @@ describe('ApiKeyService', () => {
       },
     };
 
-    service = new ApiKeyService(mockPrisma as unknown as PrismaService);
+    mockLogger = {
+      log: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    };
+
+    service = new ApiKeyService(
+      mockPrisma as unknown as PrismaService,
+      mockLogger as unknown as JsonLoggerService,
+    );
   });
 
   describe('generateRawKey and hashKey', () => {
@@ -82,6 +94,19 @@ describe('ApiKeyService', () => {
       const createCall = mockPrisma.apiKey.create.mock.calls[0][0];
       expect(createCall.data.key_hash).toBe(service.hashKey(result.secret));
       expect(createCall.data.secret).toBeUndefined();
+
+      expect(mockLogger.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_name: 'api_key_generated',
+          automation_id: 'aut-1',
+          key_id: 'key-uuid-1',
+          prefix: result.prefix,
+        }),
+      );
+      const logCall = mockLogger.log.mock.calls.find(
+        (c) => c[0]?.event_name === 'api_key_generated',
+      )?.[0];
+      expect(logCall?.secret).toBeUndefined();
     });
   });
 
@@ -106,6 +131,14 @@ describe('ApiKeyService', () => {
       const result = await service.revokeApiKey('aut-1', 'key-1');
       expect(result.revoked_at).toBeDefined();
       expect((result as unknown as { key_hash?: unknown }).key_hash).toBeUndefined();
+      expect(mockLogger.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_name: 'api_key_revoked',
+          automation_id: 'aut-1',
+          key_id: 'key-1',
+          prefix: 'fp_live_abcd1234',
+        }),
+      );
     });
   });
 

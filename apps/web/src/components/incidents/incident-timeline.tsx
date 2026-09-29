@@ -50,6 +50,7 @@ export function IncidentTimeline({ events }: { events: IncidentEvent[] }) {
 
   return (
     <div
+      role="region"
       data-testid="incident-timeline"
       className="flow-root"
       aria-label="Linha do tempo de eventos do incidente"

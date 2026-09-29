@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
 import {
@@ -63,6 +63,32 @@ export function AutomationDetailView({
   const [actionError, setActionError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const generateKeyTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const secretInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (volatileSecret) {
+      secretInputRef.current?.focus();
+    }
+  }, [volatileSecret]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (volatileSecret) {
+          setVolatileSecret(null);
+          setCopiedSecret(false);
+          generateKeyTriggerRef.current?.focus();
+        } else if (showGenerateConfirm) {
+          setShowGenerateConfirm(false);
+          generateKeyTriggerRef.current?.focus();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [volatileSecret, showGenerateConfirm]);
+
   const handleGenerateKey = async () => {
     setActionError(null);
     setIsGeneratingKey(true);
@@ -100,6 +126,7 @@ export function AutomationDetailView({
     // Descarta o segredo da memória do componente
     setVolatileSecret(null);
     setCopiedSecret(false);
+    generateKeyTriggerRef.current?.focus();
   };
 
   const handleCopySecret = async () => {
@@ -366,6 +393,7 @@ export function AutomationDetailView({
       {volatileSecret && (
         <div
           role="dialog"
+          aria-modal="true"
           aria-labelledby="secret-modal-title"
           data-testid="volatile-secret-modal"
           className="rounded-lg border-2 border-amber-500/40 bg-zinc-900 p-6 shadow-2xl space-y-4"
@@ -381,7 +409,7 @@ export function AutomationDetailView({
               type="button"
               onClick={handleCloseSecretModal}
               data-testid="close-secret-modal-button"
-              className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors"
+              className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               Fechar e Descartar da Tela
             </button>
@@ -402,18 +430,19 @@ export function AutomationDetailView({
             </label>
             <div className="flex items-center space-x-2">
               <input
+                ref={secretInputRef}
                 id="volatile-secret-value"
                 data-testid="volatile-secret-input"
                 type="text"
                 readOnly
                 value={volatileSecret.secret}
-                className="flex-1 font-mono text-xs bg-zinc-950 text-emerald-400 p-2.5 rounded border border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="flex-1 font-mono text-xs bg-zinc-950 text-emerald-400 p-2.5 rounded border border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               />
               <button
                 type="button"
                 data-testid="copy-secret-button"
                 onClick={handleCopySecret}
-                className="inline-flex items-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="inline-flex items-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 {copiedSecret ? (
                   <>
@@ -436,6 +465,7 @@ export function AutomationDetailView({
       {showGenerateConfirm && !volatileSecret && (
         <div
           role="dialog"
+          aria-modal="true"
           aria-labelledby="confirm-modal-title"
           data-testid="generate-confirm-modal"
           className="rounded-lg border border-zinc-700 bg-zinc-900 p-6 shadow-xl space-y-4"
@@ -455,7 +485,7 @@ export function AutomationDetailView({
             <button
               type="button"
               onClick={() => setShowGenerateConfirm(false)}
-              className="px-3 py-1.5 text-xs text-zinc-300 hover:text-white bg-zinc-800 rounded transition-colors"
+              className="px-3 py-1.5 text-xs text-zinc-300 hover:text-white bg-zinc-800 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               Cancelar
             </button>
@@ -464,7 +494,7 @@ export function AutomationDetailView({
               data-testid="confirm-generate-key-button"
               disabled={isGeneratingKey}
               onClick={handleGenerateKey}
-              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded transition-colors"
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               {isGeneratingKey ? 'Gerando...' : 'Confirmar e Gerar'}
             </button>
@@ -488,10 +518,11 @@ export function AutomationDetailView({
 
           {isAdmin && (
             <button
+              ref={generateKeyTriggerRef}
               type="button"
               data-testid="generate-key-button"
               onClick={() => setShowGenerateConfirm(true)}
-              className="inline-flex items-center px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium rounded-md border border-zinc-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="inline-flex items-center px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium rounded-md border border-zinc-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               <Key className="w-3.5 h-3.5 mr-1.5 text-indigo-400" aria-hidden="true" />
               Gerar Chave de Integração

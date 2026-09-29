@@ -12,11 +12,14 @@
     "lint": "eslint . && prettier --check \"apps/**/*.{ts,tsx,js,json,css}\"",
     "typecheck": "npm run typecheck --workspaces",
     "test": "npm run test --workspaces --if-present",
+    "test:e2e": "playwright test",
     "db:generate": "npm run db:generate -w apps/api",
     "db:migrate": "npm run db:migrate -w apps/api"
   },
   "devDependencies": {
+    "@clerk/testing": "^2.2.39",
     "@next/eslint-plugin-next": "^15.5.25",
+    "@playwright/test": "^1.63.0",
     "concurrently": "^9.1.2",
     "eslint": "^9.21.0",
     "eslint-config-prettier": "^10.0.2",

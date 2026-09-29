@@ -106,7 +106,7 @@ export function DashboardView() {
   };
 
   return (
-    <div className="space-y-6">
+    <main className="space-y-6" role="main" aria-label="Dashboard Operacional">
       {/* Cabeçalho do Dashboard */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-zinc-800 pb-5">
         <div>
@@ -128,7 +128,7 @@ export function DashboardView() {
               data-testid="period-btn-24h"
               disabled={period === '24h' || loading}
               onClick={() => handlePeriodChange('24h')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                 period === '24h'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -141,7 +141,7 @@ export function DashboardView() {
               data-testid="period-btn-7d"
               disabled={period === '7d' || loading}
               onClick={() => handlePeriodChange('7d')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                 period === '7d'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -154,7 +154,7 @@ export function DashboardView() {
               data-testid="period-btn-30d"
               disabled={period === '30d' || loading}
               onClick={() => handlePeriodChange('30d')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                 period === '30d'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200'
@@ -170,7 +170,7 @@ export function DashboardView() {
             onClick={handleRefresh}
             disabled={loading}
             aria-label="Atualizar dados do dashboard"
-            className="inline-flex items-center px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+            className="inline-flex items-center px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"
           >
             <RefreshCw
               className={`w-3.5 h-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`}
@@ -242,6 +242,6 @@ export function DashboardView() {
           <RecentIncidentsTable incidents={metrics.recent_incidents} />
         </div>
       )}
-    </div>
+    </main>
   );
 }

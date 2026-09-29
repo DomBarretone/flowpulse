@@ -3,6 +3,7 @@ import { AutomationStatus, Criticality, IntegrationStatus } from '@prisma/client
 import { AutomationsService } from '../src/automations/automations.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ApiKeyService } from '../src/api-keys/api-key.service';
+import { JsonLoggerService } from '../src/common/logging/json-logger.service';
 
 describe('AutomationsService', () => {
   let service: AutomationsService;
@@ -16,6 +17,7 @@ describe('AutomationsService', () => {
   };
   let mockPrisma: MockAutomationsPrisma;
   let mockApiKeyService: jest.Mocked<Pick<ApiKeyService, 'createApiKey' | 'revokeApiKey'>>;
+  let mockLogger: { log: jest.Mock; error: jest.Mock; warn: jest.Mock; debug: jest.Mock };
 
   beforeEach(() => {
     mockPrisma = {
@@ -32,9 +34,17 @@ describe('AutomationsService', () => {
       revokeApiKey: jest.fn(),
     };
 
+    mockLogger = {
+      log: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    };
+
     service = new AutomationsService(
       mockPrisma as unknown as PrismaService,
       mockApiKeyService as unknown as ApiKeyService,
+      mockLogger as unknown as JsonLoggerService,
     );
   });
 
@@ -71,6 +81,14 @@ describe('AutomationsService', () => {
       );
       expect(result.status).toBe(AutomationStatus.DRAFT);
       expect(result.integration_status).toBe(IntegrationStatus.PENDING);
+      expect(mockLogger.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_name: 'automation_created',
+          automation_id: 'aut-1',
+          owner_id: 'user-admin-1',
+          criticality: Criticality.HIGH,
+        }),
+      );
     });
   });
 
@@ -117,6 +135,13 @@ describe('AutomationsService', () => {
         }),
       );
       expect(result.status).toBe(AutomationStatus.ACTIVE);
+      expect(mockLogger.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_name: 'automation_activated',
+          automation_id: 'aut-1',
+          previous_status: AutomationStatus.DRAFT,
+        }),
+      );
     });
   });
 
@@ -141,6 +166,13 @@ describe('AutomationsService', () => {
         }),
       );
       expect(result.status).toBe(AutomationStatus.INACTIVE);
+      expect(mockLogger.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_name: 'automation_deactivated',
+          automation_id: 'aut-1',
+          previous_status: AutomationStatus.ACTIVE,
+        }),
+      );
     });
   });
 

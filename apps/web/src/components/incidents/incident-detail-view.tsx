@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@clerk/nextjs';
 import {
@@ -52,6 +52,7 @@ export function IncidentDetailView({ incidentId }: IncidentDetailViewProps) {
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
+  const resolveBtnRef = useRef<HTMLButtonElement>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -272,6 +273,7 @@ export function IncidentDetailView({ incidentId }: IncidentDetailViewProps) {
                 </button>
 
                 <button
+                  ref={resolveBtnRef}
                   onClick={() => setIsResolveModalOpen(true)}
                   disabled={actionLoading}
                   data-testid="btn-resolve"
@@ -470,7 +472,10 @@ export function IncidentDetailView({ incidentId }: IncidentDetailViewProps) {
       {/* Modal de Resolução */}
       <ResolveIncidentModal
         isOpen={isResolveModalOpen}
-        onClose={() => setIsResolveModalOpen(false)}
+        onClose={() => {
+          setIsResolveModalOpen(false);
+          resolveBtnRef.current?.focus();
+        }}
         onConfirm={handleConfirmResolve}
         isSubmitting={actionLoading}
       />

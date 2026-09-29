@@ -1,7 +1,8 @@
-import { Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { Injectable, Optional, UnprocessableEntityException } from '@nestjs/common';
 import { Automation, AutomationStatus, Execution, IntegrationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IncidentsService } from '../incidents/incidents.service';
+import { JsonLoggerService } from '../common/logging/json-logger.service';
 import { IngestExecutionDto } from './dto/ingest-execution.dto';
 import { QueryExecutionsDto } from './dto/query-executions.dto';
 
@@ -16,6 +17,7 @@ export class ExecutionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly incidentsService: IncidentsService,
+    @Optional() private readonly logger: JsonLoggerService = new JsonLoggerService(),
   ) {}
 
   async ingestExecution(
@@ -68,6 +70,14 @@ export class ExecutionsService {
           },
         });
 
+        this.logger.log({
+          event_name: 'execution_ingested',
+          execution_id: createdExecution.id,
+          automation_id: automation.id,
+          status: createdExecution.status,
+          is_test: isTest,
+        });
+
         if (isTest) {
           await tx.automation.update({
             where: { id: automation.id },
@@ -89,6 +99,15 @@ export class ExecutionsService {
             tx,
           );
           incidentId = incident ? incident.id : null;
+          if (incident) {
+            this.logger.log({
+              event_name: 'incident_created',
+              incident_id: incident.id,
+              automation_id: automation.id,
+              execution_id: createdExecution.id,
+              severity: incident.severity,
+            });
+          }
         }
 
         return {

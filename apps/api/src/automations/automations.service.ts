@@ -1,7 +1,13 @@
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Optional,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { AutomationStatus, Criticality, IntegrationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApiKeyService, GeneratedApiKeyResponse, SafeApiKey } from '../api-keys/api-key.service';
+import { JsonLoggerService } from '../common/logging/json-logger.service';
 import { CreateAutomationDto } from './dto/create-automation.dto';
 import { UpdateAutomationDto } from './dto/update-automation.dto';
 
@@ -10,10 +16,11 @@ export class AutomationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly apiKeyService: ApiKeyService,
+    @Optional() private readonly logger: JsonLoggerService = new JsonLoggerService(),
   ) {}
 
   async create(createDto: CreateAutomationDto, ownerId: string) {
-    return this.prisma.automation.create({
+    const created = await this.prisma.automation.create({
       data: {
         name: createDto.name,
         description: createDto.description,
@@ -29,6 +36,15 @@ export class AutomationsService {
         },
       },
     });
+
+    this.logger.log({
+      event_name: 'automation_created',
+      automation_id: created.id,
+      owner_id: ownerId,
+      criticality: created.criticality,
+    });
+
+    return created;
   }
 
   async findAll(filters?: { status?: AutomationStatus; criticality?: Criticality }) {
@@ -98,7 +114,7 @@ export class AutomationsService {
       );
     }
 
-    return this.prisma.automation.update({
+    const updated = await this.prisma.automation.update({
       where: { id },
       data: { status: AutomationStatus.ACTIVE },
       include: {
@@ -107,12 +123,20 @@ export class AutomationsService {
         },
       },
     });
+
+    this.logger.log({
+      event_name: 'automation_activated',
+      automation_id: id,
+      previous_status: automation.status,
+    });
+
+    return updated;
   }
 
   async deactivate(id: string) {
-    await this.findOne(id);
+    const automation = await this.findOne(id);
 
-    return this.prisma.automation.update({
+    const updated = await this.prisma.automation.update({
       where: { id },
       data: { status: AutomationStatus.INACTIVE },
       include: {
@@ -121,6 +145,14 @@ export class AutomationsService {
         },
       },
     });
+
+    this.logger.log({
+      event_name: 'automation_deactivated',
+      automation_id: id,
+      previous_status: automation.status,
+    });
+
+    return updated;
   }
 
   async createApiKey(automationId: string): Promise<GeneratedApiKeyResponse> {

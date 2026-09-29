@@ -9,9 +9,11 @@ import { AutomationsModule } from './automations/automations.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { ExecutionsModule } from './executions/executions.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { LoggingModule } from './common/logging/logging.module';
 
 @Module({
   imports: [
+    LoggingModule,
     PrismaModule,
     UsersModule,
     ApiKeysModule,

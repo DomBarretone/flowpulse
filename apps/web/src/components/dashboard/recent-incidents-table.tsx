@@ -51,7 +51,7 @@ export function RecentIncidentsTable({ incidents }: RecentIncidentsTableProps) {
         </div>
         <Link
           href="/incidents"
-          className="inline-flex items-center text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
+          className="inline-flex items-center text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           Ver todos os incidentes
           <ArrowRight className="w-3.5 h-3.5 ml-1" aria-hidden="true" />
@@ -73,7 +73,10 @@ export function RecentIncidentsTable({ incidents }: RecentIncidentsTableProps) {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table
+            className="w-full text-left text-xs border-collapse"
+            aria-label="Tabela de incidentes recentes prioritários"
+          >
             <thead>
               <tr className="border-b border-zinc-800 text-zinc-400 uppercase tracking-wider">
                 <th scope="col" className="pb-3 font-medium">
@@ -132,7 +135,7 @@ export function RecentIncidentsTable({ incidents }: RecentIncidentsTableProps) {
                   <td className="py-3 text-right whitespace-nowrap">
                     <Link
                       href={`/incidents/${incident.id}`}
-                      className="inline-flex items-center px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="inline-flex items-center px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                     >
                       Investigar
                       <ArrowRight className="w-3 h-3 ml-1" aria-hidden="true" />

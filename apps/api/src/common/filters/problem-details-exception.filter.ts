@@ -1,5 +1,6 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { trace } from '@opentelemetry/api';
 import { REQUEST_ID_HEADER } from '../middleware/request-id.middleware';
 
 export interface ProblemDetails {
@@ -9,6 +10,7 @@ export interface ProblemDetails {
   detail: string;
   instance: string;
   request_id: string;
+  trace_id?: string;
   errors?: unknown;
 }
 
@@ -17,7 +19,7 @@ export class ProblemDetailsExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request & { requestId?: string }>();
+    const request = ctx.getRequest<Request & { requestId?: string; traceId?: string }>();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let title = 'Internal Server Error';
@@ -51,6 +53,9 @@ export class ProblemDetailsExceptionFilter implements ExceptionFilter {
     const requestId =
       request.requestId || (request.headers[REQUEST_ID_HEADER] as string) || 'unknown';
 
+    const activeSpan = trace.getActiveSpan();
+    const traceId = request.traceId || activeSpan?.spanContext().traceId;
+
     const problemDetails: ProblemDetails = {
       type: `https://httpstatuses.io/${status}`,
       title,
@@ -58,6 +63,7 @@ export class ProblemDetailsExceptionFilter implements ExceptionFilter {
       detail,
       instance: request.url,
       request_id: requestId,
+      ...(traceId ? { trace_id: traceId } : {}),
       ...(errors ? { errors } : {}),
     };
 

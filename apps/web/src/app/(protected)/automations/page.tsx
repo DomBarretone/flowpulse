@@ -31,7 +31,7 @@ export default async function AutomationsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <main className="space-y-6" role="main" aria-label="Automações Monitoradas">
       {/* Cabeçalho da Página */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -48,7 +48,7 @@ export default async function AutomationsPage() {
           <Link
             href="/automations/new"
             data-testid="create-automation-button"
-            className="inline-flex items-center justify-center px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-zinc-950"
+            className="inline-flex items-center justify-center px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-md shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
           >
             <Plus className="h-4 w-4 mr-1.5" aria-hidden="true" />
             Nova Automação
@@ -93,7 +93,7 @@ export default async function AutomationsPage() {
             <div className="mt-6">
               <Link
                 href="/automations/new"
-                className="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-md shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 <Plus className="h-4 w-4 mr-1.5" aria-hidden="true" />
                 Cadastrar Automação
@@ -104,7 +104,10 @@ export default async function AutomationsPage() {
       ) : (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-zinc-300">
+            <table
+              className="w-full text-left text-sm text-zinc-300"
+              aria-label="Tabela de automações monitoradas"
+            >
               <thead className="bg-zinc-900/80 text-xs uppercase tracking-wider text-zinc-400 border-b border-zinc-800">
                 <tr>
                   <th scope="col" className="px-6 py-3.5">
@@ -158,7 +161,7 @@ export default async function AutomationsPage() {
                       <Link
                         href={`/automations/${auto.id}`}
                         data-testid={`view-details-${auto.id}`}
-                        className="inline-flex items-center text-xs font-medium text-indigo-400 hover:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded px-2 py-1"
+                        className="inline-flex items-center text-xs font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded px-2 py-1"
                       >
                         <span>Detalhes</span>
                         <ArrowRight className="w-3.5 h-3.5 ml-1" aria-hidden="true" />
@@ -171,6 +174,6 @@ export default async function AutomationsPage() {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }

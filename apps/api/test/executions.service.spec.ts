@@ -12,6 +12,7 @@ import {
 import { ExecutionsService } from '../src/executions/executions.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { IncidentsService } from '../src/incidents/incidents.service';
+import { JsonLoggerService } from '../src/common/logging/json-logger.service';
 
 describe('ExecutionsService', () => {
   let service: ExecutionsService;
@@ -27,6 +28,7 @@ describe('ExecutionsService', () => {
   };
   let mockPrisma: MockExecutionsPrisma;
   let incidentsService: IncidentsService;
+  let mockLogger: { log: jest.Mock; error: jest.Mock; warn: jest.Mock; debug: jest.Mock };
 
   const mockActiveAutomation: Automation = {
     id: 'aut-active-1',
@@ -76,7 +78,17 @@ describe('ExecutionsService', () => {
     };
 
     incidentsService = new IncidentsService(mockPrisma as unknown as PrismaService);
-    service = new ExecutionsService(mockPrisma as unknown as PrismaService, incidentsService);
+    mockLogger = {
+      log: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    };
+    service = new ExecutionsService(
+      mockPrisma as unknown as PrismaService,
+      incidentsService,
+      mockLogger as unknown as JsonLoggerService,
+    );
   });
 
   describe('ingestExecution', () => {
@@ -146,6 +158,14 @@ describe('ExecutionsService', () => {
         data: { integration_status: IntegrationStatus.VALIDATED },
       });
       expect(mockPrisma.incident.create).not.toHaveBeenCalled();
+      expect(mockLogger.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_name: 'execution_ingested',
+          execution_id: 'exec-test-1',
+          automation_id: mockDraftAutomation.id,
+          is_test: true,
+        }),
+      );
     });
 
     it('should NEVER create incident when is_test=true even if status is FAILED', async () => {
@@ -204,6 +224,23 @@ describe('ExecutionsService', () => {
           severity: IncidentSeverity.CRITICAL,
         },
       });
+      expect(mockLogger.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_name: 'execution_ingested',
+          execution_id: 'exec-prod-failed',
+          automation_id: mockActiveAutomation.id,
+          is_test: false,
+        }),
+      );
+      expect(mockLogger.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_name: 'incident_created',
+          incident_id: 'inc-001',
+          automation_id: mockActiveAutomation.id,
+          execution_id: 'exec-prod-failed',
+          severity: IncidentSeverity.CRITICAL,
+        }),
+      );
     });
 
     it('should gracefully handle P2002 unique constraint race condition during concurrent insertion', async () => {
