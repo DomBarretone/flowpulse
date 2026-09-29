@@ -1,134 +1,152 @@
-# Arquitetura de Software
+# Arquitetura de Software - FlowPulse
 
 ## Contexto Arquitetural
 
 ### Objetivo
 
-Este documento define a arquitetura do FlowPulse e registra as decisões técnicas necessárias para implementar o MVP de forma coerente com os requisitos funcionais e não funcionais.
+Este documento define a arquitetura de software do **FlowPulse** e registra as decisões técnicas fundamentais para a implementação do Projeto Incremental V2, garantindo conformidade rigorosa com os requisitos de negócio, funcionais e não funcionais.
 
-A arquitetura foi pensada para permitir uma implementação acadêmica viável sem impedir evolução posterior.
+A arquitetura foi projetada para ser modular, escalável, testável e aderente às melhores práticas de engenharia de software em ambientes modernos de nuvem.
 
 ### Escopo
 
 A arquitetura contempla:
-
-- frontend web;
-- API backend;
-- processamento de eventos;
-- persistência;
-- autenticação e autorização;
-- integração com modelo de linguagem;
-- observabilidade;
-- infraestrutura;
-- testes;
-- CI/CD.
+- **Frontend Web:** aplicação moderna, responsiva e acessível em Next.js;
+- **API Backend:** serviços estruturados e modulares em NestJS com API exclusivamente RESTful sob `/api/v1`;
+- **Persistência de Dados:** modelagem e migrações relacionais gerenciadas via Prisma ORM conectado ao PostgreSQL hospedado no Supabase;
+- **Autenticação e Autorização:** autenticação via Clerk e controle de acesso baseado em papéis (RBAC) validado no backend;
+- **Inteligência Artificial:** integração real do backend com o OpenRouter para análise assistida de causa-raiz e diagnóstico operacional;
+- **Observabilidade:** instrumentação completa com OpenTelemetry, logs estruturados em JSON, rastreabilidade por `request_id` e `trace_id`, e trilha de auditoria;
+- **Qualidade de Software:** suíte de testes com Jest (unitários), Supertest/Jest (integração da API REST), Playwright (testes ponta a ponta E2E), além de lint e build obrigatórios;
+- **Infraestrutura e DevOps:** contêineres compatíveis com OCI (Docker e Docker Compose), Infraestrutura como Código (IaC) com Terraform e automação de CI/CD com GitHub Actions.
 
 ### Arquitetura de Referência
 
-- Estilo arquitetural: aplicação web modular com API REST e processamento assíncrono.
-- Comunicação: HTTPS + JSON para APIs; fila para tarefas assíncronas.
-- Infraestrutura: contêineres OCI em ambiente gerenciado.
-- Observabilidade: OpenTelemetry para traces e métricas, além de logs estruturados.
-- Segurança: identidade externa + RBAC no backend.
+- **Estilo Arquitetural:** Arquitetura web desacoplada (Frontend SPA/SSR + Backend RESTful em camadas modulares).
+- **Comunicação:** Protocolo HTTPS com payloads em JSON UTF-8 sob o prefixo `/api/v1`.
+- **Persistência Relacional:** Fonte única da verdade gerenciada via Prisma ORM no PostgreSQL do Supabase. O frontend não possui acesso direto à base de dados.
+- **Segurança de Borda:** Autenticação gerenciada via Clerk, validação de tokens JWT no backend e papéis RBAC (`ADMIN` e `ANALYST`).
+- **Observabilidade:** Padrões abertos com OpenTelemetry e logs estruturados correlacionados.
 
-### Diagrama de contexto
+---
+
+### Diagrama de Contexto
 
 ```mermaid
 flowchart LR
     User[Analista / Administrador]
-    Source[n8n / scripts / pipelines / outros]
-    FP[FlowPulse]
-    IdP[Provedor de Identidade]
-    LLM[Provedor de IA]
+    Source[Sistemas de Origem: n8n / scripts / pipelines]
+    FP_Web[FlowPulse Web - Next.js]
+    FP_API[FlowPulse API - NestJS]
+    Clerk[Provedor de Identidade - Clerk]
+    Supabase[(PostgreSQL - Supabase)]
+    OpenRouter[Provedor de IA - OpenRouter]
+    OTel[OpenTelemetry Collector]
 
-    User -->|HTTPS| FP
-    Source -->|REST/HTTPS| FP
-    FP -->|OIDC/OAuth2| IdP
-    FP -->|HTTPS| LLM
+    User -->|HTTPS| FP_Web
+    FP_Web -->|Autenticação OIDC| Clerk
+    FP_Web -->|REST / HTTPS / JWT| FP_API
+    Source -->|REST / HTTPS / x-api-key| FP_API
+    FP_API -->|Validar JWT / JWKS| Clerk
+    FP_API -->|Prisma ORM / TCP| Supabase
+    FP_API -->|HTTPS / REST| OpenRouter
+    FP_API -->|Telemetria| OTel
+    FP_Web -->|Telemetria| OTel
 ```
 
-### Stack Tecnológica
+---
 
-#### Frontend
+## Stack Tecnológica
 
-- Linguagem: TypeScript.
-- Framework: React.
-- Build: Vite.
-- Roteamento: React Router.
-- Estilização: Tailwind CSS.
-- Componentes: shadcn/ui.
-- Requisições/cache: TanStack Query.
+### Frontend
+- **Framework:** Next.js (React com App Router);
+- **Linguagem:** TypeScript (modo estrito);
+- **Estilização:** Tailwind CSS;
+- **Biblioteca de Componentes:** shadcn/ui;
+- **Autenticação:** SDK oficial do Clerk para Next.js (`@clerk/nextjs`);
+- **Comunicação HTTP:** Fetch API / TanStack Query ou SWR para cache e mutação cliente-servidor.
 
-#### Backend
+### Backend
+- **Framework:** NestJS (arquitetura modular com Controllers, Services, Modules e Guards);
+- **Linguagem:** TypeScript (modo estrito);
+- **Padrão de API:** Exclusivamente RESTful sob o prefixo global `/api/v1`;
+- **Validação:** `class-validator` e `class-transformer` com validação de DTOs via `ValidationPipe`;
+- **Autenticação e RBAC:** SDK do Clerk (`@clerk/backend`) com Auth Guards e verificação de assinatura JWT (JWKS);
+- **Documentação:** OpenAPI / Swagger gerado dinamicamente via `@nestjs/swagger`.
 
-- Linguagem: Python.
-- Runtime: Python 3.13 ou versão estável compatível.
-- Framework: FastAPI.
-- Validação: Pydantic.
-- ORM: SQLAlchemy.
-- Migrations: Alembic.
+### Persistência de Dados
+- **SGBD:** PostgreSQL hospedado no Supabase;
+- **ORM:** Prisma ORM (`@prisma/client`);
+- **Migrações:** Prisma Migrate (`prisma migrate dev` / `prisma migrate deploy`);
+- **Diretriz Mandatória:** O frontend não acessa diretamente o banco de dados nem utiliza o Supabase Data API (PostgREST). Todas as operações de negócio devem passar pela API REST do backend NestJS.
 
-#### Banco de Dados
+### Inteligência Artificial
+- **Gateway/Provedor:** OpenRouter (acesso via REST HTTPS direto no backend);
+- **Finalidade:** Análise assistida consultiva de incidentes (produção de resumo executivo, hipóteses de causa-raiz, evidências identificadas e próximos passos diagnósticos);
+- **Restrição Estrita:** A IA não altera status do incidente nem executa comandos ou remediações automáticas.
 
-- SGBD: PostgreSQL 16 ou superior compatível.
-- Uso de JSONB apenas quando os campos forem realmente variáveis.
+### Observabilidade e Auditoria
+- **Telemetria:** OpenTelemetry (SDK Node.js para traces distribuídos e métricas);
+- **Logs Estruturados:** Formatação em JSON com correlação automática por `request_id` e `trace_id`;
+- **Auditoria:** Gravação imutável de ações administrativas e transições de estado na tabela `audit_logs`.
 
-#### Processamento Assíncrono
+### Qualidade e Testes
+- **Testes Unitários:** Jest cobrindo regras de negócio, cálculo de severidade e serviços de domínio;
+- **Testes de Integração:** Supertest com Jest cobrindo os controladores e endpoints REST da API NestJS;
+- **Testes Ponta a Ponta (E2E):** Playwright cobrindo integralmente os dois fluxos centrais de negócio no frontend Next.js;
+- **Governança de Qualidade:** Linting com ESLint, formatação com Prettier, validação de tipos TypeScript (`tsc --noEmit`) e verificação de build obrigatórios no pipeline.
 
-- Fila: serviço compatível com fila de mensagens (AWS SQS em produção).
-- Worker: serviço Python separado utilizando a mesma base de domínio do backend.
-
-#### Observabilidade
-
-- Instrumentação: OpenTelemetry.
-- Produção: OpenTelemetry Collector/ADOT encaminhando telemetria para plataforma de observabilidade.
-
-#### Identidade
-
-- Provedor externo compatível com OIDC/OAuth2, inicialmente Amazon Cognito ou equivalente.
-- Papéis de aplicação: `ADMIN` e `ANALYST`.
-
-#### Inteligência Artificial
-
-- Integração com provedor de LLM por HTTPS.
-- Provedor e modelo configuráveis por variável de ambiente.
-- Saída estruturada validada pelo backend.
-
-#### DevOps
-
-- CI/CD: GitHub Actions.
-- Registry: registry OCI, com ECR como opção de produção.
-- Infraestrutura como código: Terraform.
-- Containers: Docker/OCI.
+### DevOps e Infraestrutura
+- **Contêineres:** Docker multi-stage builds gerando imagens compatíveis com o padrão OCI;
+- **Orquestração Local:** Docker Compose para desenvolvimento padronizado;
+- **Infraestrutura como Código (IaC):** Terraform;
+- **CI/CD:** GitHub Actions para pipelines automatizados de teste, validação, build e deploy;
+- **Controle de Versão:** Git e GitHub com travas em branches e pull requests obrigatórios.
 
 ---
 
 ## Estrutura do Repositório
 
+O projeto adota uma estrutura monorepo clara e escalável:
+
 ```text
 flowpulse/
-├── docs/
-│   ├── problem.md
-│   ├── prd.md
-│   ├── spec.md
-│   ├── architecture.md
-│   └── design.md
+├── docs/                      # Documentação técnica e de produto
+│   ├── problem.md             # Definição do problema (imutável)
+│   ├── prd.md                 # Product Requirements Document
+│   ├── spec.md                # Especificação técnica detalhada
+│   ├── architecture.md        # Arquitetura de software e decisões
+│   └── design.md              # Design system e diretrizes de interface
 ├── apps/
-│   ├── web/
-│   ├── api/
-│   └── worker/
-├── packages/
-│   └── contracts/
+│   ├── web/                   # Frontend Next.js (App Router, Tailwind, Clerk)
+│   │   ├── src/
+│   │   │   ├── app/           # Rotas e páginas do Next.js
+│   │   │   ├── components/    # Componentes de UI (shadcn/ui, cards, tabelas)
+│   │   │   ├── lib/           # Utilitários e clientes de API
+│   │   │   └── hooks/         # Custom hooks
+│   │   ├── Dockerfile
+│   │   └── package.json
+│   └── api/                   # Backend NestJS (REST API, Prisma, OpenRouter)
+│       ├── src/
+│       │   ├── modules/       # Módulos: auth, automations, executions, incidents, ai
+│       │   ├── common/        # Guards, interceptors, filters, decorators
+│       │   ├── config/        # Configuração de ambiente e validação
+│       │   └── main.ts        # Ponto de entrada com prefixo /api/v1
+│       ├── prisma/            # Esquema Prisma e migrações
+│       │   ├── schema.prisma
+│       │   └── migrations/
+│       ├── Dockerfile
+│       └── package.json
 ├── infra/
-│   └── terraform/
+│   └── terraform/             # Definição de IaC para recursos em nuvem
 ├── tests/
-│   ├── e2e/
-│   └── fixtures/
-├── docker-compose.yml
-├── .env.example
+│   └── e2e/                   # Testes ponta a ponta com Playwright
+├── docker-compose.yml         # Orquestração local dos serviços
+├── .env.example               # Template de variáveis de ambiente
 ├── .github/
-│   └── workflows/
-└── README.md
+│   └── workflows/             # Pipelines de CI/CD (GitHub Actions)
+├── package.json               # Gerenciador de monorepo / scripts raiz
+└── README.md                  # Documentação inicial e guia rápido
 ```
 
 ---
@@ -137,482 +155,228 @@ flowpulse/
 
 ```mermaid
 flowchart TB
-    Browser[React Web]
-    API[FastAPI REST API]
-    Worker[Worker]
-    Queue[Fila]
-    DB[(PostgreSQL)]
-    IDP[Identity Provider]
-    AI[LLM Provider]
-    OTel[OpenTelemetry Collector]
+    subgraph Client["Camada Cliente"]
+        Browser["Navegador Web"]
+    end
 
-    Browser -->|HTTPS / JWT| API
-    API -->|validar token| IDP
-    API --> DB
-    API --> Queue
-    Queue --> Worker
-    Worker --> DB
-    Worker --> AI
+    subgraph FrontendApp["Frontend (Next.js)"]
+        UI["Interface de Usuário (Tailwind / shadcn/ui)"]
+        ClerkClient["Clerk Frontend SDK"]
+        APIFetcher["Client REST HTTP (Fetch / Cache)"]
+    end
 
-    API --> OTel
-    Worker --> OTel
+    subgraph BackendApp["Backend (NestJS API REST - /api/v1)"]
+        AuthGuard["Clerk JWT Auth Guard & RBAC"]
+        ApiKeyGuard["API Key Ingestion Guard (SHA-256)"]
+        AutoModule["Módulo de Automações"]
+        ExecModule["Módulo de Execuções"]
+        IncModule["Módulo de Incidentes & Regras"]
+        AiModule["Módulo de Análise IA (OpenRouter)"]
+        PrismaService["Prisma ORM Client"]
+        AuditService["Serviço de Auditoria"]
+        OTelSdk["OpenTelemetry Tracing & Metrics"]
+    end
+
+    subgraph ExternalServices["Serviços Externos & Persistência"]
+        ClerkAuth["Clerk Identity Service (JWKS)"]
+        SupabaseDB[("PostgreSQL (Supabase)")]
+        OpenRouterAPI["OpenRouter AI Gateway"]
+        Collector["OpenTelemetry Collector"]
+    end
+
+    Browser --> UI
+    UI --> ClerkClient
+    UI --> APIFetcher
+    ClerkClient -.->|Autenticação| ClerkAuth
+    APIFetcher -->|HTTPS / JWT /api/v1| AuthGuard
+    
+    AuthGuard --> AutoModule
+    AuthGuard --> IncModule
+    AuthGuard --> AiModule
+    ApiKeyGuard --> ExecModule
+    AuthGuard -.->|Verificação JWKS| ClerkAuth
+
+    AutoModule --> PrismaService
+    ExecModule --> PrismaService
+    ExecModule --> IncModule
+    IncModule --> PrismaService
+    AiModule --> OpenRouterAPI
+    AiModule --> PrismaService
+
+    AutoModule --> AuditService
+    IncModule --> AuditService
+    AuditService --> PrismaService
+
+    PrismaService -->|Conexão TCP Segura| SupabaseDB
+    BackendApp -.->|Telemetria| Collector
 ```
-
-### Responsabilidades
-
-#### Web
-
-- interface;
-- roteamento;
-- formulários;
-- visualização dos dados;
-- envio de comandos para a API.
-
-Não contém regras críticas de negócio.
-
-#### API
-
-- autenticação/autorização;
-- contratos REST;
-- regras de negócio síncronas;
-- validação de payload;
-- persistência;
-- publicação de tarefas assíncronas.
-
-#### Worker
-
-- processamento de eventos que podem ser desacoplados;
-- análise por IA;
-- tarefas que exigem retry;
-- geração de eventos técnicos.
-
-#### Banco
-
-Fonte única de verdade para dados de negócio do FlowPulse.
 
 ---
 
-## Adequação Funcional
+## Adequação Funcional e Fluxos Centrais
 
-### Fonte Única de Verdade
+### Fonte Única da Verdade
+- **Regras de Negócio:** Centralizadas exclusivamente no backend NestJS. O frontend atua como consumidor e exibidor de interface, não duplicando regras críticas de transição de estado ou severidade.
+- **Persistência:** Banco de dados relacional PostgreSQL no Supabase, acessado unicamente pelo Prisma ORM a partir do NestJS.
+- **Política de Acesso a Dados:** É estritamente vedado ao frontend conectar-se diretamente ao PostgreSQL ou invocar o Supabase Data API / PostgREST.
 
-- regras de negócio: camada de domínio/backend;
-- dados de negócio: PostgreSQL;
-- frontend não deve reproduzir regras críticas.
+### Rastreabilidade dos Dois Fluxos de Negócio Ponta a Ponta
 
-### Política de Comunicação entre Camadas
-
-Operações de negócio devem ocorrer pela API.
-
-É proibido:
-
-- frontend acessar diretamente o banco;
-- frontend utilizar credenciais administrativas;
-- worker alterar dados sem passar pelas regras do domínio compartilhado.
-
-### APIs e Versionamento
-
-Base:
-
+#### FLUXO 1 - Integração de uma Automação
 ```text
-/api/v1
+1. Login ADMIN via Clerk
+2. Cadastro da automação (nome, descrição, criticidade, duração esperada) em POST /api/v1/automations
+3. Persistência via Prisma em status DRAFT
+4. Geração de credencial em POST /api/v1/automations/{id}/api-keys (chave exibida uma vez, hash SHA-256 no banco)
+5. Envio de teste real da integração em POST /api/v1/executions com flag is_test: true e cabeçalho x-api-key
+6. Recebimento pela API REST, autenticação por hash e persistência no PostgreSQL do Supabase via Prisma
+7. Ativação do monitoramento em POST /api/v1/automations/{id}/activate (status ACTIVE)
 ```
 
-Estratégia:
-
-- versionamento por URL;
-- OpenAPI gerado pelo backend;
-- JSON;
-- paginação para coleções;
-- filtros e ordenação quando aplicáveis.
-
----
-
-## Eficiência de Desempenho
-
-### Comunicação
-
-- HTTPS/JSON para requisições;
-- fila para tarefas assíncronas;
-- conexões ao banco por pool.
-
-### Metas iniciais
-
-- ingestão de evento: p95 abaixo de 500 ms sem considerar tarefas assíncronas;
-- endpoints de leitura comuns: p95 abaixo de 800 ms em carga de MVP;
-- criação do incidente: objetivo de ocorrer em até 5 segundos após processamento do evento.
-
-As metas serão verificadas com testes de carga e ajustadas conforme o ambiente.
-
-### Rate Limiting
-
-- autenticação de usuário: conforme provedor;
-- API de ingestão: limite por credencial/automação;
-- análise de IA: limite por usuário e incidente.
-
-### Escalabilidade
-
-- API stateless;
-- workers independentes;
-- múltiplas réplicas atrás de balanceador;
-- fila absorve picos;
-- banco gerenciado com backup e possibilidade de réplica/evolução.
+#### FLUXO 2 - Tratamento de Incidente
+```text
+1. Execução com falha enviada pela automação para POST /api/v1/executions
+2. Recebimento pela API REST, autenticação e persistência da execução via Prisma
+3. Motor de regras detecta falha/timeout ou duração acima do esperado e cria o incidente com severidade
+4. Analista visualiza ocorrência no dashboard e aciona Assumir (POST /api/v1/incidents/{id}/acknowledge) -> status ACKNOWLEDGED
+5. Analista move para investigação (POST /api/v1/incidents/{id}/start-investigation) -> status INVESTIGATING
+6. Analista solicita análise assistida por IA (POST /api/v1/incidents/{id}/ai-analysis)
+7. Backend NestJS sanitiza os dados e chama a API do OpenRouter
+8. OpenRouter retorna resumo, causas prováveis, evidências e próximos passos (grau de confiança)
+9. Análise é persistida em ai_analyses via Prisma e exibida no frontend com aviso consultivo
+10. Analista aplica ações no ambiente de origem e registra nota de resolução (POST /api/v1/incidents/{id}/resolve)
+11. Status transita para RESOLVED, com cálculo de MTTA/MTTR e registro de auditoria
+```
 
 ---
 
-## Compatibilidade
+## Autenticação e Segurança
 
-### Integração
-
-- API REST;
-- webhook de entrada;
-- JSON UTF-8.
-
-### CORS
-
-Somente origens conhecidas e configuradas por ambiente.
-
-### Portabilidade
-
-- desenvolvimento local via Docker Compose;
-- componentes executáveis em containers OCI;
-- configuração por variáveis;
-- infraestrutura descrita em Terraform;
-- evitar APIs proprietárias dentro do domínio sempre que possível.
-
----
-
-## Usabilidade
-
-### Diretrizes Frontend
-
-- navegação consistente;
-- feedback explícito de carregamento, sucesso e erro;
-- estados vazios informativos;
-- ações destrutivas com confirmação;
-- severidade representada por texto/ícone além da cor.
-
-### Experiência de Autenticação
-
-- login por provedor externo;
-- sessão expirada leva a reautenticação;
-- usuário sem permissão recebe feedback apropriado.
-
----
-
-## Confiabilidade
-
-### Tratamento de Erros
-
-API utiliza estrutura consistente baseada em Problem Details.
-
-Erros técnicos não devem expor stack traces ao usuário.
-
-### Auditoria
-
-Operações auditadas:
-
-- criação/alteração de automação;
-- geração/revogação de credencial;
-- atribuição de incidente;
-- alteração de status;
-- solicitação de análise de IA;
-- resolução.
-
-Campos mínimos:
-
-- ator;
-- ação;
-- recurso;
-- timestamp;
-- request/trace id.
-
-### Migrations
-
-- toda mudança de esquema deve utilizar migration;
-- migrations versionadas no Git;
-- alterações manuais no banco de produção são proibidas.
-
-### Testes Automatizados
-
-- Lint: Ruff (backend) e ESLint (frontend).
-- Unidade: Pytest e Vitest.
-- Integração: Pytest com banco de teste.
-- E2E/aceite: Playwright.
-
-### Cobertura Mínima
-
-Meta inicial:
-
-- regras de domínio backend: 80%;
-- frontend de componentes críticos: 70%.
-
-Cobertura não substitui os testes ponta a ponta dos fluxos de negócio.
-
-### Critérios de Teste
-
-Toda regra crítica deve contemplar:
-
-- happy path;
-- sad path;
-- edge cases.
-
----
-
-## Segurança
-
-### Princípios Gerais
-
-- menor privilégio;
-- deny by default;
-- segredos fora do código;
-- validação no servidor;
-- rastreabilidade de operações sensíveis.
-
-### Gestão de Identidade
-
-O provedor externo é responsável por:
-
-- autenticação;
-- recuperação;
-- política de sessão;
-- MFA quando configurado.
-
-### Autenticação
+### Fluxo de Autenticação com Clerk
 
 ```mermaid
 sequenceDiagram
-    actor U as Usuário
-    participant W as Web
-    participant I as Identity Provider
-    participant A as API
+    actor User as Usuário (Admin/Analista)
+    participant Web as Next.js Frontend
+    participant Clerk as Clerk Identity Service
+    participant API as NestJS Backend (/api/v1)
 
-    U->>W: Acessa FlowPulse
-    W->>I: Inicia autenticação
-    I-->>W: Token OIDC/JWT
-    W->>A: Requisição + Bearer token
-    A->>A: Valida token e papel
-    A-->>W: Resposta autorizada
+    User->>Web: Acessa a aplicação
+    Web->>Clerk: Inicia fluxo de autenticação
+    Clerk-->>Web: Retorna token JWT de sessão
+    Web->>API: Requisição HTTP + Bearer <JWT>
+    API->>Clerk: Valida assinatura via JWKS pública
+    API->>API: Extrai papel RBAC (ADMIN ou ANALYST)
+    API->>API: Aplica Guard de autorização da rota
+    API-->>Web: Resposta com dados autorizados (JSON)
 ```
 
-### Autorização
-
-- RBAC.
-- `ADMIN`: administração e operação.
-- `ANALYST`: operação de incidentes e consulta.
-
-Validação sempre no backend.
-
-### Chaves de Integração
-
-- segredo mostrado uma vez;
-- persistência apenas do hash;
-- prefixo visível para identificação;
-- possibilidade de revogação;
-- uma automação pode rotacionar credenciais.
-
-### Transporte
-
-- HTTPS obrigatório fora do ambiente local;
-- TLS moderno administrado pela plataforma de infraestrutura.
-
-### Segurança de Dados
-
-- evitar armazenar payload completo quando não necessário;
-- dados enviados ao LLM passam por sanitização;
-- nenhum segredo deve ser encaminhado ao provedor de IA;
-- backups e criptografia do banco habilitados em produção.
+### Chaves de Ingestão (API Keys)
+- Geradas aleatoriamente no backend com prefixo legível (`fp_live_`);
+- O segredo completo é exibido uma única vez ao usuário administrador;
+- O banco armazena apenas o hash criptográfico SHA-256;
+- Na ingestão (`POST /api/v1/executions`), o backend efetua o hash do cabeçalho `x-api-key` e busca a correspondência no banco, garantindo alta performance e segurança em repouso.
 
 ---
 
-## Manutenibilidade
+## Observabilidade e Telemetria
 
-### Organização
+### OpenTelemetry (SDK Node.js)
+A aplicação backend inicializa o SDK do OpenTelemetry antes dos módulos da aplicação:
+- **Tracing:** Spans automáticos para requisições HTTP REST, queries do Prisma ORM e chamadas HTTPS externas para o OpenRouter;
+- **Propagação de Contexto:** Headers `traceparent` propagados entre componentes;
+- **Correlação:** Middleware global que assegura que toda requisição possua um `request_id` e um `trace_id`.
 
-- separação de interface, aplicação, domínio e infraestrutura no backend;
-- componentes de UI reutilizáveis;
-- contratos de API versionados.
-
-### Convenções
-
-- formatação automatizada;
-- lint obrigatório;
-- commits e pull requests revisáveis;
-- documentação atualizada junto das mudanças relevantes.
-
-### Variáveis de Ambiente
-
-Exemplos:
-
-```text
-DATABASE_URL
-OIDC_ISSUER
-OIDC_AUDIENCE
-AI_PROVIDER
-AI_API_KEY
-OTEL_EXPORTER_OTLP_ENDPOINT
-QUEUE_URL
-APP_ENV
+### Logs Estruturados em JSON
+Logs emitidos em padrão JSON contendo:
+```json
+{
+  "timestamp": "2026-09-20T10:30:00.123Z",
+  "level": "INFO",
+  "service": "flowpulse-api",
+  "environment": "production",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "request_id": "req_c3a1b89d4ef7",
+  "event_name": "EXECUTION_RECEIVED",
+  "automation_id": "018e38f4-2f2b-7128-98e3-0d5bdf161111",
+  "status": "failed"
+}
 ```
 
-É proibido versionar valores secretos.
+---
+
+## Qualidade e Estratégia de Testes
+
+### Pirâmide de Testes
+
+1. **Testes Unitários (Jest):**
+   - Validação de cálculos de severidade (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`);
+   - Cálculo de métricas operacionais (MTTA, MTTR, taxas de disponibilidade);
+   - Sanitização de dados de entrada antes do envio para o OpenRouter;
+   - Regras de domínio e DTOs de validação.
+
+2. **Testes de Integração de API (Supertest + Jest):**
+   - Execução contra a aplicação NestJS usando banco de teste;
+   - Validação dos contratos de API sob `/api/v1`;
+   - Teste dos Guards de autenticação do Clerk e verificação de RBAC (`ADMIN` vs `ANALYST`);
+   - Teste de ingestão de eventos via `x-api-key` e persistência via Prisma;
+   - Mock do gateway OpenRouter para validação de respostas estruturadas e tratamento de falhas técnicas (`503`).
+
+3. **Testes Ponta a Ponta E2E (Playwright):**
+   - **FLUXO 1 E2E:** Autenticação ADMIN -> Criação de automação -> Geração de credencial -> Execução de teste -> Ativação;
+   - **FLUXO 2 E2E:** Ingestão de falha -> Criação automática de incidente -> Reconhecimento pelo analista -> Acionamento de análise de IA -> Preenchimento de resolução -> Status RESOLVED.
+
+4. **Linting e Validação Estática:**
+   - ESLint e Prettier aplicados no frontend e backend;
+   - Verificação rigorosa de tipagem com TypeScript (`tsc --noEmit`);
+   - Validação de compilação/build (`next build` e `nest build`).
 
 ---
 
-## Portabilidade e Implantação
+## Portabilidade, Implantação e DevOps
 
-### Containers
+### Ambientes
 
-- Dockerfiles compatíveis com OCI;
-- imagens imutáveis;
-- healthcheck;
-- usuário não-root quando aplicável.
+#### Ambiente de Desenvolvimento Local
+Orquestrado via `docker-compose.yml`:
+- Serviço `web`: container Node.js executando Next.js;
+- Serviço `api`: container Node.js executando NestJS com Prisma Client;
+- Banco de Dados: conexão direta com a instância do Supabase ou container Postgres local parametrizado via `.env`.
 
-### Ambiente Local
+#### Ambiente de Produção
+- Contêineres OCI imutáveis com builds multi-stage para redução de footprint e segurança (execução com usuário não-root);
+- Infraestrutura provisionada e gerenciada através de scripts Terraform modulares;
+- Variáveis de ambiente e segredos injetados de forma segura em runtime, sem nunca serem versionados no Git.
 
-```mermaid
-flowchart LR
-    Web[web container]
-    API[api container]
-    Worker[worker container]
-    DB[(postgres)]
-    Queue[queue emulator/local]
+### Pipeline de CI/CD (GitHub Actions)
 
-    Web --> API
-    API --> DB
-    API --> Queue
-    Queue --> Worker
-    Worker --> DB
-```
+1. **Etapa de Validação (Pull Request):**
+   - Checkout do código e instalação de dependências travadas via `package-lock.json`;
+   - Linting e formatação;
+   - Verificação estática de tipos TypeScript;
+   - Execução dos testes unitários com Jest;
+   - Execução dos testes de integração de API com Supertest e Jest;
+   - Execução dos testes E2E com Playwright;
+   - Validação de build das aplicações (`web` e `api`).
 
-Orquestração local por Docker Compose.
-
-### Produção de Referência
-
-```mermaid
-flowchart TB
-    Internet[Internet]
-    CDN[CDN / Web]
-    LB[Load Balancer]
-    API1[API container]
-    API2[API container]
-    Q[Managed Queue]
-    W1[Worker]
-    W2[Worker]
-    DB[(Managed PostgreSQL)]
-    IDP[Identity Provider]
-    AI[LLM Provider]
-    O[OTel / Observability]
-
-    Internet --> CDN
-    CDN --> LB
-    LB --> API1
-    LB --> API2
-    API1 --> DB
-    API2 --> DB
-    API1 --> Q
-    API2 --> Q
-    Q --> W1
-    Q --> W2
-    W1 --> DB
-    W2 --> DB
-    W1 --> AI
-    W2 --> AI
-    API1 --> IDP
-    API2 --> IDP
-    API1 --> O
-    API2 --> O
-    W1 --> O
-    W2 --> O
-```
-
-A implementação de referência poderá utilizar AWS ECS/Fargate, RDS PostgreSQL, SQS, ECR e Cognito, todos provisionados por Terraform.
+2. **Etapa de Deploy (Main Branch):**
+   - Execução completa dos testes e verificações;
+   - Build das imagens Docker OCI;
+   - Validação do plano Terraform (`terraform plan`);
+   - Aplicação controlada e deploy dos serviços;
+   - Execução de smoke tests nos endpoints de healthcheck.
 
 ---
 
-## Observabilidade
+## Rastreabilidade dos Requisitos Não Funcionais (RNFs)
 
-### OpenTelemetry
-
-Instrumentar:
-
-- requisições HTTP;
-- chamadas ao banco;
-- publicação/consumo de mensagens;
-- chamadas ao provedor de IA.
-
-Propagar:
-
-- `trace_id`;
-- `span_id`;
-- `request_id`.
-
-### Logs Estruturados
-
-Campos mínimos:
-
-- timestamp;
-- level;
-- service;
-- environment;
-- trace_id;
-- request_id;
-- event_name;
-- resource_id quando aplicável.
-
-Não utilizar `print`/`console.log` como estratégia de observabilidade em produção.
-
-### Métricas
-
-- requests por rota;
-- latência;
-- taxa de erro;
-- eventos ingeridos;
-- incidentes criados;
-- mensagens na fila;
-- falhas no worker;
-- chamadas e falhas do provedor de IA.
-
----
-
-## CI/CD
-
-### Pull Request
-
-1. instalação de dependências;
-2. lint;
-3. testes de unidade;
-4. testes de integração;
-5. build das imagens.
-
-### Main
-
-1. todas as validações;
-2. build de imagens OCI;
-3. publicação no registry;
-4. aplicação do Terraform/plano controlado;
-5. deploy;
-6. smoke test.
-
----
-
-## Evolução Planejada
-
-- conectores específicos;
-- regras configuráveis;
-- detecção de anomalias;
-- agrupamento inteligente de incidentes;
-- automações de remediação com aprovação;
-- integração com ITSM.
-
----
-
-## Limites de Implementação do MVP
-
-Não será implementado no MVP:
-
-- execução autônoma de correções pela IA;
-- billing;
-- app mobile;
-- multi-tenant comercial complexo;
-- substituição de plataformas completas de observabilidade.
+| Requisito | Descrição | Implementação Arquitetural |
+|---|---|---|
+| **RNF-01** | Acessibilidade e Portabilidade | Next.js, TypeScript, Tailwind CSS, conformidade WCAG 2.1 AA (navegação teclado, contraste, foco visível, status com texto). |
+| **RNF-02** | Segurança | Clerk para autenticação, validação de tokens JWT no NestJS via Guards/JWKS, RBAC (`ADMIN` e `ANALYST`), chaves de API com hash SHA-256, HTTPS/TLS, proibição expressa de acesso do frontend ao banco ou Supabase Data API, sanitização de IA. |
+| **RNF-03** | Interoperabilidade | API exclusivamente RESTful desenvolvida em NestJS sob o prefixo `/api/v1`, documentação OpenAPI/Swagger gerada automaticamente, JSON UTF-8. |
+| **RNF-04** | Observabilidade e Rastreabilidade | Instrumentação com OpenTelemetry (SDK Node.js), logs estruturados em JSON, correlação com `request_id` e `trace_id`, auditoria completa de transições em `audit_logs`. |
+| **RNF-05** | Manutenibilidade e Testabilidade | Monorepo tipado ponta a ponta com TypeScript. Testes unitários com Jest, integração com Supertest/Jest, E2E com Playwright. Lint e build obrigatórios no CI. |
+| **RNF-06** | Portabilidade e Implantação | Containers compatíveis com OCI via Docker multi-stage, orquestração de desenvolvimento com Docker Compose, Infraestrutura como Código via Terraform, CI/CD automatizado via GitHub Actions. |
+| **RNF-07** | Persistência | PostgreSQL hospedado no Supabase gerenciado por Prisma ORM com migrações versionadas (`prisma migrate`). Frontend restrito de interações diretas com o banco. |
+| **RNF-08** | Governança de Código e Configuração | Repositório Git/GitHub com branch protection. Dependências declaradas e versionadas com lockfile (`package-lock.json`). Configurações externas exclusivamente por variáveis de ambiente, sem segredos versionados. |

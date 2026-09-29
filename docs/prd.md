@@ -110,9 +110,10 @@ O produto será organizado inicialmente em seis módulos:
 
 #### RF-01 Autenticação e controle de acesso
 
-- Objetivo: permitir acesso seguro ao FlowPulse por meio de um provedor externo de identidade.
-- Perfis iniciais: `ADMIN` e `ANALYST`.
-- Usuários sem autenticação não devem acessar dados do produto.
+- Objetivo: permitir acesso seguro ao FlowPulse por meio do Clerk como serviço externo de autenticação.
+- Perfis iniciais (RBAC): `ADMIN` e `ANALYST`.
+- O backend valida os tokens de sessão emitidos pelo Clerk.
+- Usuários sem autenticação não devem acessar dados ou rotas protegidas do produto.
 
 #### RF-02 Cadastro e gestão de automações
 
@@ -126,7 +127,7 @@ O produto será organizado inicialmente em seis módulos:
 
 #### RF-04 Recebimento de execuções
 
-- Objetivo: receber eventos de execução por API REST.
+- Objetivo: receber eventos de execução por API REST sob `/api/v1`.
 - Estados mínimos suportados: `started`, `success`, `failed` e `timeout`.
 - O evento deverá ser associado a uma automação cadastrada.
 
@@ -149,14 +150,14 @@ O produto será organizado inicialmente em seis módulos:
 
 #### RF-08 Análise assistida por IA
 
-- Objetivo: apoiar a investigação de um incidente real.
-- A IA deverá utilizar dados da execução e do incidente para gerar:
+- Objetivo: apoiar a investigação de um incidente real por meio de integração direta do backend com OpenRouter.
+- A IA deverá utilizar dados sanitizados da execução e do incidente para gerar:
   - resumo do erro;
   - hipóteses de causa;
   - evidências utilizadas;
   - próximos passos sugeridos;
   - nível de confiança.
-- A análise será somente consultiva e não poderá resolver automaticamente o incidente.
+- A análise será exclusivamente consultiva e a IA não poderá alterar status do incidente nem executar correções ou remediações automaticamente.
 
 #### RF-09 Histórico e auditoria
 
@@ -174,51 +175,58 @@ O produto será organizado inicialmente em seis módulos:
 
 ### RNF-01 Acessibilidade e Portabilidade
 
-O FlowPulse deverá ser uma aplicação web responsiva, compatível com navegadores modernos que suportem HTML5, CSS3 e ECMAScript 2020 ou superior.
+O FlowPulse deverá ser uma aplicação web responsiva desenvolvida em Next.js, TypeScript e Tailwind CSS, compatível com navegadores modernos que suportem HTML5, CSS3 e ECMAScript 2020 ou superior.
 
 A interface deverá seguir práticas de acessibilidade compatíveis com WCAG 2.1 nível AA, incluindo navegação por teclado, foco visível, contraste adequado, textos alternativos e indicação de status que não dependa somente de cor.
 
 ### RNF-02 Segurança
 
-A autenticação deverá utilizar provedor externo de identidade. A autorização será baseada em papéis (`ADMIN` e `ANALYST`).
+A autenticação de usuários será realizada pelo Clerk como serviço externo de identidade. O backend NestJS deverá validar os tokens de sessão emitidos pelo Clerk. A autorização será baseada em papéis (RBAC) com os perfis `ADMIN` e `ANALYST`.
 
-Dados em trânsito deverão utilizar HTTPS/TLS. Segredos e credenciais não poderão ser armazenados no código-fonte. Dados persistidos deverão utilizar os mecanismos de criptografia oferecidos pela infraestrutura.
+O frontend não deve acessar diretamente o banco de dados ou utilizar o Supabase Data API para funcionalidades de negócio: todas as operações de negócio devem passar pela API REST do backend.
+
+A ingestão de eventos por automações utilizará chaves de API com validação por hash criptográfico seguro (SHA-256).
+
+Dados em trânsito deverão utilizar HTTPS/TLS. Segredos e credenciais não poderão ser armazenados no código-fonte. Dados persistidos deverão utilizar os mecanismos de criptografia da infraestrutura. Payloads enviados para análise assistida de IA via OpenRouter deverão sofrer sanitização prévia de dados sensíveis.
 
 ### RNF-03 Interoperabilidade
 
-As integrações do produto serão disponibilizadas por APIs RESTful utilizando HTTP/HTTPS e JSON.
+As integrações do produto serão disponibilizadas por uma API exclusivamente RESTful sob o prefixo `/api/v1` desenvolvida em NestJS, utilizando HTTP/HTTPS e JSON UTF-8.
 
-A API deverá possuir versionamento e documentação OpenAPI.
+A API deverá possuir versionamento explícito e documentação interativa gerada via OpenAPI/Swagger.
 
 ### RNF-04 Observabilidade e Rastreabilidade
 
-A aplicação deverá produzir logs estruturados, métricas e traces utilizando padrões abertos de observabilidade.
+A aplicação deverá produzir logs estruturados em JSON, métricas e traces utilizando OpenTelemetry e padrões abertos de observabilidade.
 
-Requisições e processamentos deverão possuir identificadores de correlação. Eventos importantes do ciclo de vida de um incidente deverão ser auditáveis.
+Requisições e processamentos deverão possuir identificadores de correlação (`request_id` e `trace_id`). Operações administrativas e eventos críticos do ciclo de vida de automações e incidentes deverão possuir trilha de auditoria persistida.
 
 ### RNF-05 Manutenibilidade e Testabilidade
 
-O projeto deverá possuir testes automatizados de unidade, integração e aceite/end-to-end.
+O projeto deverá possuir tipagem estrita com TypeScript de ponta a ponta e testes automatizados em três níveis:
+- Testes unitários com Jest;
+- Testes de integração da API REST com Supertest e Jest;
+- Testes ponta-a-ponta (E2E) com Playwright.
 
-O código será organizado por módulos e deverá passar por lint, testes e validações automatizadas antes de ser integrado à branch principal.
+O código será organizado por módulos e deverá passar por verificações obrigatórias de lint (ESLint/Prettier), type-checking e build antes de qualquer integração à branch principal.
 
 ### RNF-06 Portabilidade e Implantação
 
-Os serviços da aplicação deverão ser empacotados em contêineres compatíveis com o padrão OCI.
+Os serviços da aplicação (frontend e backend) deverão ser empacotados em contêineres compatíveis com o padrão OCI através do Docker e orquestrados localmente via Docker Compose.
 
-A infraestrutura de produção deverá ser definida por Infraestrutura como Código. Os serviços de aplicação deverão ser stateless sempre que possível, permitindo escalabilidade horizontal e implantação em mais de uma instância.
+A infraestrutura de nuvem deverá ser definida por Infraestrutura como Código (IaC) com Terraform. Os serviços de aplicação deverão ser stateless, permitindo escalabilidade horizontal. O pipeline de integração e entrega contínua será gerenciado via GitHub Actions.
 
 ### RNF-07 Persistência
 
-A persistência principal utilizará banco de dados relacional PostgreSQL.
+A persistência principal utilizará banco de dados relacional PostgreSQL hospedado no Supabase, gerenciado exclusivamente pelo backend através do Prisma ORM.
 
-Dados de execução, incidentes, histórico e auditoria deverão possuir integridade referencial e migrations versionadas.
+Dados de automações, chaves de API, execuções, incidentes, eventos, análises de IA e auditoria deverão possuir integridade referencial relacional e migrações versionadas via `prisma migrate`. É estritamente vedado ao frontend o acesso direto ao banco ou às APIs de dados do Supabase.
 
 ### RNF-08 Governança de Código e Configuração
 
-O código e a documentação deverão permanecer em Git e em repositório acessível pela internet.
+O código-fonte e a documentação deverão permanecer sob controle de versão no Git e em repositório no GitHub.
 
-Dependências deverão possuir declaração formal e lockfile. Configurações específicas de ambiente deverão ser externalizadas em variáveis de ambiente ou serviço equivalente.
+Todas as dependências deverão possuir declaração formal em arquivos `package.json` com travamento por lockfile (`package-lock.json`). Configurações específicas de ambiente deverão ser externalizadas em variáveis de ambiente, sendo terminantemente proibido o versionamento de credenciais ou segredos.
 
 ---
 
@@ -272,10 +280,10 @@ Dependências deverão possuir declaração formal e lockfile. Configurações e
 
 ### Dependências Externas
 
-- provedor de identidade;
-- provedor de modelo de linguagem para a análise assistida;
-- infraestrutura de nuvem;
-- serviço de banco de dados PostgreSQL.
+- **Clerk:** serviço externo de autenticação, gerenciamento de sessões e emissão de tokens JWT;
+- **OpenRouter:** provedor de inteligência artificial para fornecimento de modelos de linguagem na análise assistida de incidentes;
+- **Supabase:** serviço gerenciado de banco de dados PostgreSQL;
+- **Infraestrutura em Nuvem:** recursos de execução e deployment gerenciados via Terraform e GitHub Actions.
 
 ---
 
@@ -285,16 +293,16 @@ Dependências deverão possuir declaração formal e lockfile. Configurações e
 
 #### Incluído
 
-- autenticação;
+- autenticação via Clerk com RBAC (`ADMIN` e `ANALYST`);
 - cadastro de automações;
-- geração de credencial de integração;
-- ingestão de eventos por API;
+- geração de credencial de integração com hash criptográfico;
+- ingestão de eventos por API REST sob `/api/v1`;
 - histórico de execuções;
-- criação automática de incidentes;
-- severidade e ciclo de vida do incidente;
-- dashboard;
-- análise assistida por IA;
-- auditoria básica;
+- criação automática de incidentes por falha, timeout ou estouro de duração;
+- severidade e ciclo de vida completo do incidente (`OPEN` -> `ACKNOWLEDGED` -> `INVESTIGATING` -> `RESOLVED`);
+- dashboard e indicadores operacionais (MTTA, MTTR, taxa de sucesso);
+- análise assistida por IA via OpenRouter (consultiva);
+- auditoria básica das operações de negócio;
 - filtros e pesquisa.
 
 #### Não Incluído
@@ -304,7 +312,8 @@ Dependências deverão possuir declaração formal e lockfile. Configurações e
 - aplicativo mobile nativo;
 - cobrança e planos;
 - envio de SMS;
-- machine learning próprio para previsão de falhas.
+- machine learning próprio para previsão de falhas;
+- acesso direto do frontend ao banco de dados ou à API Data do Supabase.
 
 ### Versão 1.0
 
@@ -326,26 +335,28 @@ Dependências deverão possuir declaração formal e lockfile. Configurações e
 
 ### Critérios de Negócio
 
-- uma automação cadastrada deve conseguir enviar uma execução e visualizar o resultado no FlowPulse;
-- uma execução com falha deve conseguir gerar um incidente;
-- o incidente deve possuir início, acompanhamento e encerramento dentro do próprio sistema;
-- a análise assistida por IA deve utilizar dados reais do incidente e ficar registrada.
+- **Fluxo 1 (Integração de automação):** login de ADMIN via Clerk -> cadastro da automação com criticidade e duração esperada -> geração de credencial -> teste real da integração via API REST -> evento recebido e persistido -> ativação do monitoramento com sucesso no FlowPulse;
+- **Fluxo 2 (Tratamento de incidente):** execução com falha recebida pela API -> persistência -> criação automática de incidente -> analista assume a ocorrência -> investigação assistida por IA real via OpenRouter (com resumo, causas prováveis, evidências e próximos passos) -> registro formal da resolução -> incidente finalizado em `RESOLVED`;
+- o ciclo de vida do incidente possui início, acompanhamento e encerramento rastreáveis no sistema;
+- a análise assistida por IA é estritamente consultiva e não executa correções ou alterações de status sozinhas.
 
 ### Critérios Técnicos
 
-- a API deve possuir documentação OpenAPI;
-- dados persistidos devem utilizar PostgreSQL;
-- autenticação e autorização devem ser aplicadas aos endpoints protegidos;
-- serviços devem executar em contêineres OCI;
-- infraestrutura de produção deve possuir definição por código;
-- logs, métricas e traces devem ser correlacionáveis.
+- a API é exclusivamente RESTful, desenvolvida em NestJS sob o prefixo `/api/v1` com documentação OpenAPI/Swagger;
+- a persistência de dados utiliza PostgreSQL no Supabase gerenciado exclusivamente pelo Prisma ORM no backend;
+- o frontend em Next.js não se conecta diretamente ao banco ou à Supabase Data API;
+- a autenticação e validação de tokens JWT do Clerk e o RBAC (`ADMIN` e `ANALYST`) são aplicados no backend;
+- os serviços executam em contêineres compatíveis com o padrão OCI através do Docker e Docker Compose;
+- a infraestrutura é definida e mantida como código utilizando Terraform;
+- observabilidade completa através do OpenTelemetry com correlação por `request_id` e `trace_id` e logs estruturados em JSON.
 
 ### Critérios de Qualidade
 
-- os dois fluxos principais devem possuir testes automatizados ponta a ponta;
-- regras de negócio críticas devem possuir testes de unidade e integração;
-- interface principal deve ser responsiva e navegável por teclado;
-- nenhum segredo deve existir no repositório.
+- os dois fluxos centrais de negócio (FLUXO 1 e FLUXO 2) possuem testes ponta a ponta automatizados com Playwright;
+- regras de negócio e endpoints protegidos possuem testes unitários com Jest e testes de integração com Supertest e Jest;
+- validação rigorosa de lint (ESLint/Prettier) e build obrigatórios no pipeline do GitHub Actions;
+- a interface principal é responsiva e atende aos critérios de acessibilidade WCAG 2.1 nível AA;
+- nenhum segredo ou credencial confidencial é versionado no repositório.
 
 ---
 
