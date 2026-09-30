@@ -34,7 +34,7 @@ jobs:
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flowpulse?schema=public
-      PORT: 3001
+      BACKEND_PORT: 3001
       GLOBAL_PREFIX: api/v1
       WEB_ORIGIN: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
@@ -161,6 +161,20 @@ jobs:
       - name: Install Playwright Browsers
         if: steps.check-e2e-secrets.outputs.run_e2e == 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Verify clean ports and processes before E2E
+        if: steps.check-e2e-secrets.outputs.run_e2e == 'true'
+        run: |
+          echo "=== Docker Containers ==="
+          docker ps
+          echo "=== Port Check (3000, 3001, 3002) ==="
+          if command -v ss >/dev/null 2>&1; then
+            ss -tulpn | grep -E ':(3000|3001|3002)\b' || echo "Ports 3000, 3001, 3002 are clean and free."
+          elif command -v lsof >/dev/null 2>&1; then
+            lsof -i :3000 -i :3001 -i :3002 || echo "Ports 3000, 3001, 3002 are clean and free."
+          else
+            echo "Neither ss nor lsof available to check ports."
+          fi
 
       - name: Run Playwright E2E Tests
         if: steps.check-e2e-secrets.outputs.run_e2e == 'true'
