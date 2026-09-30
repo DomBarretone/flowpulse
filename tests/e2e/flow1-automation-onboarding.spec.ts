@@ -25,16 +25,34 @@ test.describe('E2E — Fluxo 1: Onboarding e Ativação de Automação', () => {
     await page.locator('[data-testid="automation-duration-input"]').fill('60');
 
     // 3. Submissão e redirecionamento para a tela de detalhes
-    await Promise.all([
-      page.waitForURL(
-        (url) => {
-          const pathname = typeof url === 'string' ? new URL(url).pathname : url.pathname;
-          return /^\/automations\/[^/]+$/.test(pathname) && pathname !== '/automations/new';
-        },
-        { timeout: 20000 },
+    const [createResponse] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes('/api/v1/automations') && res.request().method() === 'POST',
       ),
       page.locator('[data-testid="submit-automation-button"]').click(),
     ]);
+
+    if (!createResponse.ok()) {
+      let errorSummary = '';
+      try {
+        const errJson = await createResponse.json();
+        errorSummary = errJson?.title || errJson?.message || '';
+      } catch {
+        // ignora erro de parse
+      }
+      expect(
+        createResponse.ok(),
+        `POST /api/v1/automations failed with HTTP ${createResponse.status()}: ${errorSummary}`,
+      ).toBeTruthy();
+    }
+
+    await page.waitForURL(
+      (url) => {
+        const pathname = typeof url === 'string' ? new URL(url).pathname : url.pathname;
+        return /^\/automations\/[^/]+$/.test(pathname) && pathname !== '/automations/new';
+      },
+      { timeout: 20000 },
+    );
     await expect(page.locator('h1')).toContainText(autoName);
 
     // 4. Solicitação e confirmação de chave de API

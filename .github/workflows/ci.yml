@@ -47,6 +47,7 @@ jobs:
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY || 'sk_test_placeholder' }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || 'test-openrouter-key' }}
       E2E_CLERK_USER_EMAIL: ${{ secrets.E2E_CLERK_USER_EMAIL }}
+      FLOWPULSE_ADMIN_EMAILS: ${{ secrets.E2E_CLERK_USER_EMAIL }}
 
     steps:
       - name: Checkout repository
