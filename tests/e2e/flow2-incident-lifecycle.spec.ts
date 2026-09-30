@@ -30,9 +30,17 @@ test.describe('E2E — Fluxo 2: Ciclo de Incidente e IA Consultiva', () => {
     const autoName = `E2E Incident Test ${Date.now()}`;
     await page.locator('[data-testid="automation-name-input"]').fill(autoName);
     await page.locator('[data-testid="automation-criticality-select"]').selectOption('HIGH');
-    await page.locator('[data-testid="automation-duration-input"]').fill('30');
-    await page.locator('[data-testid="submit-automation-button"]').click();
-    await page.waitForURL(/\/automations\/[a-zA-Z0-9-]+/, { timeout: 20000 });
+    await Promise.all([
+      page.waitForURL(
+        (url) => {
+          const pathname = typeof url === 'string' ? new URL(url).pathname : url.pathname;
+          return /^\/automations\/[^/]+$/.test(pathname) && pathname !== '/automations/new';
+        },
+        { timeout: 20000 },
+      ),
+      page.locator('[data-testid="submit-automation-button"]').click(),
+    ]);
+    await expect(page.locator('h1')).toContainText(autoName);
 
     // Gera credencial
     await page.locator('[data-testid="generate-key-button"]').click();

@@ -25,8 +25,16 @@ test.describe('E2E — Fluxo 1: Onboarding e Ativação de Automação', () => {
     await page.locator('[data-testid="automation-duration-input"]').fill('60');
 
     // 3. Submissão e redirecionamento para a tela de detalhes
-    await page.locator('[data-testid="submit-automation-button"]').click();
-    await page.waitForURL(/\/automations\/[a-zA-Z0-9-]+/, { timeout: 20000 });
+    await Promise.all([
+      page.waitForURL(
+        (url) => {
+          const pathname = typeof url === 'string' ? new URL(url).pathname : url.pathname;
+          return /^\/automations\/[^/]+$/.test(pathname) && pathname !== '/automations/new';
+        },
+        { timeout: 20000 },
+      ),
+      page.locator('[data-testid="submit-automation-button"]').click(),
+    ]);
     await expect(page.locator('h1')).toContainText(autoName);
 
     // 4. Solicitação e confirmação de chave de API
