@@ -335,36 +335,89 @@ Logs emitidos em padrão JSON contendo:
 
 ## Portabilidade, Implantação e DevOps
 
-### Ambientes
+### Ambientes e Estratégia de Isolamento
 
-#### Ambiente de Desenvolvimento Local
-Orquestrado via `docker-compose.yml`:
-- Serviço `web`: container Node.js executando Next.js;
-- Serviço `api`: container Node.js executando NestJS com Prisma Client;
-- Banco de Dados: conexão direta com a instância do Supabase ou container Postgres local parametrizado via `.env`.
+O FlowPulse implementa separação rigorosa entre os ambientes de Desenvolvimento e Produção, assegurando isolamento de dados, segredos e infraestrutura computacional:
 
-#### Ambiente de Produção
-- Contêineres OCI imutáveis com builds multi-stage para redução de footprint e segurança (execução com usuário não-root);
-- Infraestrutura provisionada e gerenciada através de scripts Terraform modulares;
-- Variáveis de ambiente e segredos injetados de forma segura em runtime, sem nunca serem versionados no Git.
+#### 1. Ambiente de Desenvolvimento Local
+- Orquestrado via `docker-compose.yml`:
+  - Serviço `web`: container Node.js executando Next.js em modo desenvolvimento com hot-reload (`Dockerfile.dev`);
+  - Serviço `api`: container Node.js executando NestJS com Prisma Client e recarregamento automático (`Dockerfile.dev`);
+  - Serviço `postgres`: container PostgreSQL 16 Alpine local para isolamento de dados de teste, parametrizado via `.env`.
+- Assegura produtividade de desenvolvimento sem interferir em dados remotos ou ambientes de nuvem.
+
+#### 2. Validação Local de Produção
+- Orquestrado via `docker-compose.prod.yml`:
+  - Executa as imagens exatas de produção multi-stage (`apps/api/Dockerfile` e `apps/web/Dockerfile`);
+  - Sem volume bind-mounts de código-fonte hospedeiro;
+  - Dependência estrita de inicialização (`web` aguarda `api` saudável via healthcheck nativo);
+  - Injeção explícita de variáveis de ambiente de produção;
+  - Permite validar paridade funcional e comportamentos de produção antes da publicação em nuvem.
+
+#### 3. Ambiente de Produção Cloud (AWS)
+- Computação serveless com **AWS ECS no AWS Fargate** distribuído em 2 Zonas de Disponibilidade (AZs);
+- Balanceamento de carga com **Application Load Balancer (ALB)** público terminando TLS nativo na porta 443 via certificado ACM, com redirecionamento HTTP 80 permanente (HTTP 301) para HTTPS 443;
+- Roteamento por caminho no ALB: requisições `/api/*` encaminhadas ao target group da API (NestJS porta 3001) e requisições padrão encaminhadas ao target group Web (Next.js standalone porta 3000);
+- Banco de Dados gerenciado: PostgreSQL hospedado no Supabase, com migrações aplicadas exclusivamente via conexão direta na porta 5432 (modo de sessão, não pooler de transação porta 6543) antes da substituição de tarefas ECS;
+- Redes otimizadas para custo: VPC dedicada em 2 AZs com subnets públicas e Internet Gateway, sem custos de NAT Gateway, com Security Groups estritos onde os containers ECS aceitam tráfego de entrada exclusivamente a partir do Security Group do ALB.
+
+### Arquitetura de Contêineres OCI
+
+Os contêineres de produção seguem padrões rigorosos de segurança e otimização:
+- **Build Multi-Stage**:
+  - `apps/api/Dockerfile`: Estágio de builder com `node:22-bookworm-slim`, instalação de dependências completas, compilação do NestJS (`nest build`), geração do Prisma Client (`prisma generate`), `npm prune --omit=dev`, e estágio runner contendo estritamente dependências de produção e artefatos compilados em `dist/main.js`.
+  - `apps/web/Dockerfile`: Estágio de builder com injeção de variáveis públicas `NEXT_PUBLIC_*` via argumentos de build, compilação com `output: 'standalone'` no Next.js 15, e estágio runner copiando `.next/standalone`, `.next/static` e `public/` executando `apps/web/server.js`.
+- **Execução Não-Root**: Ambos os contêineres de produção executam explicitamente sob o usuário `node` (UID 1000, GID 1000), prevenindo elevação de privilégios.
+- **Healthchecks Nativos**: Probes de integridade (`HEALTHCHECK`) implementadas com a API nativa `fetch` do runtime Node.js 22, eliminando dependência de utilitários de terceiros (`curl`/`wget`) na imagem mínima.
+- **Isolamento de Build Context**: Arquivo raiz `.dockerignore` previne estritamente o envio de arquivos `.env*`, `.git`, credenciais de teste (`playwright/.auth`), diretórios `dist` e `node_modules` para o contexto do Docker, validado por probe de sentinelas e inspeção de imagens finais.
+
+### Infraestrutura como Código (Terraform CLI >= 1.11)
+
+Toda a infraestrutura em nuvem é declarada de forma modular e idempotente na pasta `infra/terraform/`:
+- **Versão e Provedores**: Terraform CLI `>= 1.11.0` e provedor AWS limitado (`>= 5.86.0, < 6.0.0`), com dependências fixadas no Git via `.terraform.lock.hcl`.
+- **Remote State com Native S3 Locking (Zero DynamoDB)**:
+  - Módulo `infra/terraform/bootstrap/`: Cria o bucket S3 de estado com versionamento, criptografia SSE-S256 e bloqueio de acesso público;
+  - Configuração parcial de backend (`backend "s3" {}`) em `infra/terraform/environments/production/backend.tf`, inicializado dinamicamente via argumentos `-backend-config` (bucket, chave, região, criptografia e `use_lockfile = true`);
+  - Bloqueio de concorrência nativo no S3 sem necessidade de tabelas DynamoDB adicionais.
+- **Segredos em Estado Zero (Zero-Persistence Secrets)**:
+  - Segredos de produção (`DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENROUTER_API_KEY`) declarados com `sensitive = true` e `ephemeral = true`;
+  - Parâmetros SSM gravados via atributos write-only (`value_wo` e `value_wo_version`) introduzidos no AWS Provider v5.86.0+, impedindo a persistência do valor secreto no `terraform.tfstate` ou no plano;
+  - Verificação automatizada via teste de canary sintético (`FLOWPULSE_TERRAFORM_SECRET_CANARY_DO_NOT_PERSIST`), reportando estritamente `PASS` ou `FAIL` sem expor credenciais reais.
+- **Alta Disponibilidade e Controle de Custos**:
+  - Variável `desired_count` parametrizada: padrão `2` para operação em Alta Disponibilidade multi-AZ, configurável para `1` em avaliações acadêmicas para redução de 50% nos custos de computação Fargate;
+  - Procedimento de destruição completa documentado (`terraform destroy`) para eliminação imediata de custos de ALB e Fargate após encerramento de testes.
 
 ### Pipeline de CI/CD (GitHub Actions)
 
-1. **Etapa de Validação (Pull Request):**
-   - Checkout do código e instalação de dependências travadas via `package-lock.json`;
-   - Linting e formatação;
-   - Verificação estática de tipos TypeScript;
-   - Execução dos testes unitários com Jest;
-   - Execução dos testes de integração de API com Supertest e Jest;
-   - Execução dos testes E2E com Playwright;
-   - Validação de build das aplicações (`web` e `api`).
+1. **Pipeline de Integração Contínua (`.github/workflows/ci.yml`):**
+   - Disparo: Pull Requests e pushes para a branch `main`;
+   - Container de serviço PostgreSQL 16 com healthcheck ativo;
+   - Instalação limpa via `npm ci` e geração de Prisma Client;
+   - Gates de qualidade: linter (`npm run lint`), checagem estática de tipos (`npm run typecheck`), migrações locais e suíte de testes unitários/integração (`npm run test`), compilação de pacotes (`npm run build`);
+   - Validação de sintaxe dos arquivos Compose (`docker compose config` e `docker-compose.prod.yml config`);
+   - Validação sintática e formatação de Terraform (`terraform fmt -check`, `terraform validate`);
+   - Teste de segurança de segredos com canary sintético do Terraform;
+   - Verificação de dois níveis de contexto Docker (probe com sentinelas locais e inspeção de ausência de segredos nas imagens finais);
+   - Testes E2E com Playwright utilizando mock determinístico de IA na porta 3002, com política de falha explícita no CI se segredos obrigatórios do Clerk estiverem ausentes em branches confiáveis.
 
-2. **Etapa de Deploy (Main Branch):**
-   - Execução completa dos testes e verificações;
-   - Build das imagens Docker OCI;
-   - Validação do plano Terraform (`terraform plan`);
-   - Aplicação controlada e deploy dos serviços;
-   - Execução de smoke tests nos endpoints de healthcheck.
+2. **Pipeline de Implantação Contínua (`.github/workflows/deploy.yml`):**
+   - Disparo: Pushes na branch `main`;
+   - Gate pré-deploy de validação executando todos os checks de qualidade;
+   - Autenticação na AWS exclusivamente via OpenID Connect (OIDC) sem chaves estáticas de longa duração;
+   - Autenticação e login no Amazon ECR;
+   - Validação de conexão direta do PostgreSQL na porta 5432 (abortando se apontar para pooler 6543) e execução de `npx prisma migrate deploy` em executor único antes do rollout;
+   - Build e publicação de contêineres no ECR tagueados com o SHA imutável do commit Git (`${{ github.sha }}`);
+   - Inicialização do Terraform com `-backend-config` e aplicação de infraestrutura com argumentos efêmeros atualizando as task definitions com a nova tag de imagem;
+   - Aguardo de estabilidade no rollout dos serviços ECS (`aws ecs wait services-stable`);
+   - Execução automatizada de testes de fumaça HTTPS pós-implantação (`scripts/smoke-test.sh`).
+
+### Testes de Fumaça HTTPS (`scripts/smoke-test.sh`)
+
+Script automatizado com retentativas limitadas e backoff exponencial que valida:
+1. `GET https://${DOMAIN}/` → Retorna HTTP 200 (Frontend Next.js operacional);
+2. `GET https://${DOMAIN}/api/v1/health` → Retorna HTTP 200 com payload `{"status":"ok",...}` (API NestJS saudável);
+3. `GET https://${DOMAIN}/api/v1/automations` (sem token) → Retorna HTTP 401 (Enforcement do Guard de autenticação).
+Falhas de resposta ou esgotamento de timeout encerram com código de erro não-zero, reprovando o pipeline.
 
 ---
 

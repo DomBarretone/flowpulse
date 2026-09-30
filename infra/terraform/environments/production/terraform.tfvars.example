@@ -1,0 +1,26 @@
+# Example Terraform variables for FlowPulse Production Environment
+# Copy this file to terraform.tfvars and fill with appropriate values.
+# NEVER commit real secret values to version control.
+
+aws_region  = "us-east-1"
+environment = "production"
+
+# Desired task count: 2 for HA (multi-AZ), or 1 for academic cost management
+desired_count = 2
+
+# Container image tags (immutable commit SHA from GitHub Actions)
+api_image_tag = "sha-placeholder"
+web_image_tag = "sha-placeholder"
+
+# ACM Certificate ARN (pre-created or validated via DNS)
+acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/placeholder-uuid"
+
+# Public frontend and backend configuration
+clerk_publishable_key = "pk_live_placeholder"
+web_origin            = "https://app.flowpulse.example.com"
+
+# Sensitive runtime secrets (injected via CI/CD environment variables or AWS SSM)
+# For local planning/validation, use placeholder strings
+database_url       = "postgresql://user:pass@db.project.supabase.co:5432/postgres?sslmode=require"
+clerk_secret_key   = "sk_live_placeholder"
+openrouter_api_key = "sk-or-v1-placeholder"

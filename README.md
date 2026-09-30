@@ -418,6 +418,116 @@ npx playwright test
 
 ---
 
+## 🚀 Containerização, Infraestrutura como Código (Terraform) e CI/CD
+
+### 1. Ambientes de Execução Local
+
+#### Desenvolvimento (`docker-compose.yml`)
+Preserva o fluxo com hot-reload e montagem de volumes:
+```bash
+docker compose up -d
+```
+
+#### Validação Local Production-Like (`docker-compose.prod.yml`)
+Executa os contêineres de produção multi-stage sem bind-mounts de código:
+```bash
+# Validar sintaxe
+docker compose -f docker-compose.prod.yml config
+
+# Subir stack de validação de produção
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+### 2. Builds de Contêineres OCI de Produção
+
+As imagens de produção executam como usuário não-root `node` (UID 1000) e utilizam healthchecks com a API nativa `fetch` do Node.js:
+```bash
+# Build do backend NestJS
+docker build -f apps/api/Dockerfile -t flowpulse-api:latest .
+
+# Build do frontend Next.js 15 standalone (com build args públicos)
+docker build -f apps/web/Dockerfile \
+  --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_placeholder \
+  --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in \
+  --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up \
+  --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard \
+  --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard \
+  --build-arg NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1 \
+  -t flowpulse-web:latest .
+
+# Verificação de segurança de dois níveis (build context sentinel probe e inspeção final)
+./scripts/verify-docker-context.sh all flowpulse-api:latest flowpulse-web:latest
+```
+
+### 3. Infraestrutura como Código (Terraform)
+
+A infraestrutura é provisionada via Terraform CLI `>= 1.11.0` e AWS Provider `>= 5.86.0, < 6.0.0`:
+
+#### Fase 1: Bootstrap do Remote State S3
+Cria o bucket S3 seguro com versionamento, criptografia AES256 e bloqueio público, com travamento nativo via S3 lockfile (`use_lockfile = true`) sem DynamoDB:
+```bash
+terraform -chdir=infra/terraform/bootstrap init
+terraform -chdir=infra/terraform/bootstrap apply
+```
+
+#### Fase 2: Configuração Parcial de Backend & Inicialização
+O ambiente de produção utiliza backend parcial sem variáveis interpoladas:
+```bash
+terraform -chdir=infra/terraform/environments/production init \
+  -backend-config="bucket=<NOME_DO_BUCKET_BOOTSTRAP>" \
+  -backend-config="key=production/terraform.tfstate" \
+  -backend-config="region=us-east-1" \
+  -backend-config="encrypt=true" \
+  -backend-config="use_lockfile=true"
+```
+
+#### Fase 3: Gerenciamento Seguro de Segredos (Zero State Persistence)
+Segredos de runtime (`DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENROUTER_API_KEY`) utilizam variáveis efêmeras sensíveis (`ephemeral = true`, `sensitive = true`) e atributos `value_wo` no SSM Parameter Store:
+```bash
+# Teste automatizado de validação de zero-leak com canary sintético
+./scripts/verify-terraform-secrets.sh
+```
+
+#### Fase 4: Dimensionamento e Custos (HA vs Acadêmico)
+- **Produção / Alta Disponibilidade (Padrão):** `desired_count = 2` distribui tarefas ECS Fargate em 2 Zonas de Disponibilidade atrás do ALB.
+- **Avaliação Acadêmica / Redução de Custo:** `desired_count = 1` reduz os custos de computação Fargate em 50%.
+- **Teardown Imediato pós-avaliação:** Para eliminar cobranças de ALB e Fargate, execute:
+```bash
+terraform -chdir=infra/terraform/environments/production destroy
+```
+
+### 4. Configuração Manual Necessária (GitHub Secrets & AWS OIDC)
+
+Para execução dos pipelines no GitHub Actions, configure no repositório:
+
+| Tipo | Nome | Descrição |
+|---|---|---|
+| **Secret** | `AWS_OIDC_ROLE_ARN` | ARN da Role IAM com relação de confiança OIDC para o GitHub Actions |
+| **Secret** | `TF_STATE_BUCKET` | Nome do bucket S3 criado no bootstrap |
+| **Secret** | `DATABASE_URL` | String de conexão direta Supabase PostgreSQL (porta 5432) |
+| **Secret** | `CLERK_SECRET_KEY` | Chave secreta do Clerk para autenticação backend |
+| **Secret** | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Chave pública do Clerk |
+| **Secret** | `OPENROUTER_API_KEY` | Chave de API do OpenRouter |
+| **Secret** | `ACM_CERTIFICATE_ARN` | ARN do certificado SSL/TLS no AWS ACM para terminação HTTPS |
+| **Secret** | `E2E_CLERK_USER_EMAIL` | Email do usuário de teste configurado no Clerk |
+| **Variable** | `AWS_REGION` | Região AWS (ex.: `us-east-1`) |
+| **Variable** | `DOMAIN_NAME` | Domínio FQDN da aplicação apontado para o ALB |
+| **Variable** | `DESIRED_COUNT` | Quantidade de réplicas de tarefas ECS (ex.: `2` ou `1`) |
+
+### 5. Testes de Fumaça HTTPS Pós-Deploy
+
+O script de smoke tests valida os endpoints públicos e protegidos via HTTPS com retentativas e timeout configuráveis:
+```bash
+# Execução direta contra o domínio publicado
+./scripts/smoke-test.sh app.flowpulse.example.com
+```
+Validações automáticas:
+1. `GET https://${DOMAIN}/` → Retorna HTTP 200 (Frontend);
+2. `GET https://${DOMAIN}/api/v1/health` → Retorna HTTP 200 com `status: ok` (Backend);
+3. `GET https://${DOMAIN}/api/v1/automations` (sem token) → Retorna HTTP 401 (Auth Guard).
+
+---
+
 ## 📡 Contratos da API REST (`/api/v1`)
 
 Todas as rotas seguem o padrão RESTful sob `/api/v1`, com payloads em `application/json` (UTF-8) e códigos de status HTTP semânticos (conforme RFC 7807 para erros).

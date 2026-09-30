@@ -1,130 +1,41 @@
 # Proposal: 07-container-iac-deployment
 
-## Objetivo
+## Why
 
-Empacotar os serviços em contêineres OCI prontos para produção, provisionar a infraestrutura de nuvem via Terraform executável e automatizar o pipeline de CI/CD completo com GitHub Actions — incluindo deploy automatizado e smoke tests verificando que a aplicação está operacional após cada entrega.
+FlowPulse currently operates through local developer runtime scripts and development Dockerfiles without hardened production containerization, reproducible cloud infrastructure as code, or an automated CI/CD deployment pipeline. To fulfill RNF-06 (Portability and Deployment) and RNF-08 (Code and Configuration Governance), the system requires multi-stage OCI containers, modular Terraform infrastructure targeting AWS ECS Fargate with native HTTPS and zero-leak state management, isolated environment configurations, and an end-to-end GitHub Actions pipeline with automated database migrations and post-deployment smoke tests.
 
-A evidência de implantação automatizada é o pipeline funcionando de ponta a ponta: build → test → push de imagem → apply Terraform → deploy → smoke tests passando. Terraform plan ou documentação isolada não são suficientes.
+## What Changes
 
----
+- **Secure Docker Build Context & Verification**: Create a root `.dockerignore` file strictly excluding local secrets (`.env`, `.env.*`), test credentials (`playwright/.auth`), build artifacts, and development directories. Add a two-level verification probe (build-context probe with sentinels and final-image inspection) proving no sensitive files or source secrets leak into container layers.
+- **Production OCI Multi-Stage Containerization**: Implement production Dockerfiles for `apps/api` (NestJS) and `apps/web` (Next.js 15 standalone) executing under non-root users (`node`). Implement reliable healthchecks using Node.js runtime native `fetch` rather than assuming external CLI tools (`curl`) exist in minimal images.
+- **Explicit Build-Time vs Runtime Configuration**: Clearly delineate public build-time variables (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `NEXT_PUBLIC_API_URL`, etc. inlined during `next build`) from runtime secrets (`DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENROUTER_API_KEY`), strictly forbidding runtime secrets from Docker `ARG`, Docker build `ENV`, or image contents.
+- **Production Compose Validation**: Provide a local production compose configuration (`docker-compose.prod.yml`) validating container interoperability, health dependencies, and environment variable injection while preserving existing `docker-compose.yml` for development.
+- **Infrastructure as Code (Terraform CLI >= 1.11 & AWS Provider >= 5.86.0, < 6.0.0)**: Define modular Terraform configurations in `infra/terraform/` with partial backend configuration (`backend "s3" {}`) initialized via external non-secret arguments with native S3 locking (`use_lockfile = true`) without DynamoDB, VPC networking without NAT Gateway, ECR registries, ECS Fargate services, Application Load Balancer with HTTPS listener on port 443 and HTTP 80 redirect.
+- **Zero-Persistence Secrets in Terraform State**: Manage production runtime secrets in AWS SSM Parameter Store using write-only arguments (`value_wo` and `value_wo_version`) with `sensitive = true` and `ephemeral = true` variables. Validate absence of secrets in plan and state files using a synthetic canary secret (`FLOWPULSE_TERRAFORM_SECRET_CANARY_DO_NOT_PERSIST`) reporting strictly PASS/FAIL without logging real credentials.
+- **Cost-Conscious High Availability**: Configure ECS Fargate across 2 Availability Zones with configurable `desired_count` (defaulting to 2 for HA, reducible to 1 for academic cost management), documenting teardown procedures (`terraform destroy`) post-evaluation.
+- **Environment Isolation and Direct Database Migration**: Separate Development from Production. Execute single-runner `prisma migrate deploy` during CD using direct PostgreSQL session connection (port 5432, not transaction poolers) prior to ECS service rollout.
+- **Automated CI Pipeline (Pull Requests)**: Implement `.github/workflows/ci.yml` running linting, typechecking, serialized unit/integration tests, Next.js/NestJS builds, Playwright E2E tests (which explicitly fail on missing secrets in trusted branches, using deterministic local OpenRouter mock), Terraform formatting/validation, and Docker build context security checks.
+- **Automated CD Pipeline (Main Branch)**: Implement `.github/workflows/deploy.yml` triggered on main pushes to build immutable tagged OCI images (`${{ github.sha }}`), push to ECR, execute controlled `prisma migrate deploy`, initialize Terraform via partial backend config and apply infrastructure via AWS OIDC, await service readiness, and run automated HTTPS smoke tests.
+- **Post-Deployment HTTPS Verification**: Automated smoke tests verifying HTTPS 200 on frontend `/`, HTTPS 200 on API `/api/v1/health`, and HTTP 401 unauthorized enforcement on protected endpoints.
 
-## Escopo
+## Capabilities
 
-### Incluído
+### New Capabilities
 
-**Dockerfiles — Produção (multi-stage OCI)**
-- `apps/api/Dockerfile`:
-  - Stage `build`: instala dependências com `npm ci`, compila TypeScript (`nest build`), gera Prisma Client
-  - Stage `production`: copia apenas `dist/`, `node_modules` de produção e o Prisma Client; executa com usuário não-root (`node`)
-  - Sem secrets ou credenciais na imagem
-- `apps/web/Dockerfile`:
-  - Stage `build`: instala dependências e executa `next build`
-  - Stage `production`: imagem mínima servindo a aplicação Next.js standalone; executa com usuário não-root
-- Ambas as imagens compatíveis com o padrão OCI, sem camadas desnecessárias
+- `container-deployment`: Defines OCI multi-stage production container builds, build context exclusion of secrets with sentinel probe verification, Node native healthchecks, non-root user execution, and production container validation.
+- `infrastructure-as-code`: Defines modular Terraform infrastructure provisioning for AWS ECS Fargate, S3 partial remote state with native locking (`use_lockfile = true`), HTTPS ALB with ACM, ephemeral zero-leak SSM secrets with synthetic canary testing, networking without NAT Gateways, and configurable HA scaling.
+- `deployment-environments`: Defines separation between development and production environments, runtime secret management vs public build-time configuration, and direct database migration connectivity.
+- `ci-cd-deployment`: Defines GitHub Actions automation for PR validation gates (with explicit non-silent failure on missing secrets in trusted runs), immutable image publishing, AWS OIDC authentication, and continuous deployment.
+- `deployment-verification`: Defines pre-release direct database migration execution, container readiness verification with backoff, and automated post-deployment HTTPS smoke tests.
 
-**Docker Compose — Produção local**
-- `docker-compose.yml` atualizado com configuração de produção:
-  - Serviço `api`: variáveis de ambiente via `.env`, porta `3001`, healthcheck em `/api/v1/health`
-  - Serviço `web`: variáveis de ambiente via `.env`, porta `3000`, healthcheck em `/`
-  - Rede interna isolada entre os serviços
-- `docker-compose.dev.yml` separado para desenvolvimento com hot-reload (mantendo o de desenvolvimento do change 01)
+### Modified Capabilities
 
-**Terraform — Infraestrutura como Código**
-- Diretório `infra/terraform/` com módulos para:
-  - Serviço de execução de contêineres (ex.: Cloud Run, ECS ou equivalente — definido conforme ambiente acadêmico)
-  - Variáveis de ambiente e secrets injetados via mecanismo seguro (ex.: Secret Manager, Parameter Store)
-  - Regras de rede e HTTPS
-- `terraform init`, `terraform plan` e `terraform apply` executáveis no CI
-- State backend remoto configurado (ex.: GCS bucket ou S3) para evitar state local
-- Nenhuma credencial no código Terraform; todas via variáveis e secrets do CI
+None. Existing specifications remain unchanged; new deployment and infrastructure concerns are addressed through the dedicated capabilities above.
 
-**GitHub Actions — Pipeline CI/CD**
-- Workflow `ci.yml` (Pull Request):
-  1. Checkout + `npm ci`
-  2. `npm run lint`
-  3. `npm run typecheck`
-  4. `npm run test` (unitários + integração)
-  5. `npm run build` (next build + nest build)
-  6. `npm run test:e2e` (Playwright — Fluxo 1 e Fluxo 2)
-- Workflow `deploy.yml` (push na branch `main`):
-  1. Execução completa do pipeline de validação (etapas do `ci.yml`)
-  2. Build das imagens Docker (`docker build --target production`)
-  3. Push das imagens para registry (ex.: GitHub Container Registry ou Docker Hub)
-  4. `terraform init && terraform apply -auto-approve` com secrets injetados via GitHub Secrets
-  5. Aguarda deploy estabilizar (health check ou wait de serviço)
-  6. Smoke tests: `curl` ou script verificando:
-     - `GET /api/v1/health` → 200
-     - `GET /` (frontend) → 200
-     - `GET /api/v1/automations` com token ADMIN → 200 ou 401 (confirma que a API está autenticando)
-- Secrets gerenciados via GitHub Secrets (nunca em YAML de workflow em texto plano):
-  - `DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENROUTER_API_KEY`, `TERRAFORM_*`, `REGISTRY_TOKEN`
+## Impact
 
-**Healthcheck Endpoint**
-- `GET /api/v1/health`: endpoint público (sem autenticação) retornando:
-  ```json
-  { "status": "ok", "timestamp": "...", "version": "..." }
-  ```
-- Utilizado pelos Dockerfiles (HEALTHCHECK), Docker Compose e smoke tests do CI
-
-### Excluído
-
-- Multi-tenant ou ambientes múltiplos (staging, homologação) — fora do MVP acadêmico
-- CDN ou cache de edge para o frontend
-- Auto-scaling automatizado (o Terraform provisiona escala manual inicial)
-- Monitoramento externo (Datadog, New Relic etc.)
-- Rollback automatizado (ação manual via Terraform destroy + re-apply)
-
----
-
-## Entidades e Migrations
-
-| Entidade | Tabela | Neste change |
-|----------|--------|--------------|
-| — | — | Nenhuma migration. `prisma migrate deploy` é executado no pipeline de deploy antes de subir o serviço da API. |
-
----
-
-## Critério de Conclusão
-
-**Pipeline CI (`ci.yml`) passa com saída zero em um Pull Request de exemplo:**
-```
-lint ✓  typecheck ✓  test ✓  build ✓  test:e2e ✓
-```
-
-**Pipeline Deploy (`deploy.yml`) executa end-to-end:**
-```
-validação ✓  docker build ✓  docker push ✓  terraform apply ✓  deploy ✓  smoke tests ✓
-```
-
-**Smoke tests passando:**
-- `GET /api/v1/health` → 200 `{"status":"ok"}`
-- `GET /` → 200 (frontend carregado)
-- API autenticando corretamente (401 sem token ou 200 com token válido)
-
-**Verificações de segurança:**
-- Nenhuma imagem Docker contém secrets ou credenciais
-- Nenhum secret aparece nos logs do GitHub Actions (masked corretamente)
-- Imagens executando com usuário não-root (verificado via `docker inspect`)
-
----
-
-## Não-objetivos
-
-- Terraform plan apenas como artefato de documentação
-- Substituir smoke tests por verificação manual
-- Configuração de múltiplos ambientes (staging vs. produção)
-- Sistema de rollback automatizado
-
----
-
-## Dependências
-
-- `06-observability-quality` (todos os testes passando, quality gates verificados, pipeline local estável)
-
----
-
-## Referências
-
-- `@docs/prd.md` — RNF-06 (Portabilidade e Implantação), RNF-08 (Governança)
-- `@docs/architecture.md` — DevOps e Infraestrutura, Pipeline de CI/CD, Ambientes, Portabilidade
-- `@AGENTS.md` — Never-do: git push --force, secrets em logs ou no git; regra de closure com saída zero
+- **Build Tooling & Dependencies**: Adds Next.js standalone build configuration in `apps/web/next.config.ts`, root `.dockerignore`, and GitHub Actions workflow definitions.
+- **Runtime & Operations**: Containers run as non-root (`node`) users with strictly externalized environment variables and native fetch healthchecks.
+- **Infrastructure**: New `infra/terraform/` directory containing Terraform modules, bootstrap S3 bucket for remote state with native locking, and production environment declarations.
+- **CI/CD**: Pull requests and main branch merges trigger GitHub Actions workflows requiring configured GitHub Secrets and AWS OIDC role.
+- **Database**: Production deployments execute `prisma migrate deploy` via direct port 5432 connection before service startup, without altering `schema.prisma` or generating new migrations.
