@@ -1,4 +1,5 @@
 import { SignUp } from '@clerk/nextjs';
+import { clerkAppearance } from '@/lib/clerk-appearance';
 
 export default function SignUpPage() {
   return (
@@ -10,17 +11,7 @@ export default function SignUpPage() {
             Crie sua conta para acessar o console operacional
           </p>
         </div>
-        <SignUp
-          appearance={{
-            elements: {
-              card: 'bg-zinc-900 border border-zinc-800 shadow-2xl text-zinc-100',
-              headerTitle: 'text-zinc-100 font-bold',
-              headerSubtitle: 'text-zinc-400',
-              formButtonPrimary: 'bg-indigo-600 hover:bg-indigo-500 text-white font-medium',
-              footerActionLink: 'text-indigo-400 hover:text-indigo-300',
-            },
-          }}
-        />
+        <SignUp appearance={clerkAppearance} />
       </div>
     </main>
   );

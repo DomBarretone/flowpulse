@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { auth } from '@clerk/nextjs/server';
 import { UserButton } from '@clerk/nextjs';
+import { clerkAppearance } from '@/lib/clerk-appearance';
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   // auth.protect() redireciona automaticamente para /sign-in se não autenticado
@@ -42,21 +43,7 @@ export default async function ProtectedLayout({ children }: { children: React.Re
             Incidentes
           </Link>
           <div className="pl-2 border-l border-zinc-800">
-            <UserButton
-              appearance={{
-                elements: {
-                  userButtonAvatarBox: 'w-8 h-8 border border-zinc-700',
-                  userButtonPopoverCard:
-                    'bg-zinc-900 border border-zinc-800 text-zinc-100 shadow-xl',
-                  userPreviewMainIdentifier: 'text-zinc-100 font-semibold',
-                  userPreviewSecondaryIdentifier: 'text-zinc-400',
-                  userButtonPopoverActionButton:
-                    'text-zinc-300 hover:text-zinc-100 hover:bg-zinc-800',
-                  userButtonPopoverActionButtonIcon: 'text-zinc-400',
-                  userButtonPopoverFooter: 'hidden',
-                },
-              }}
-            />
+            <UserButton appearance={clerkAppearance} />
           </div>
         </nav>
       </header>
