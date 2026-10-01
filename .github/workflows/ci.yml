@@ -1,0 +1,186 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gates:
+    name: Quality Gates & Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: flowpulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d flowpulse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flowpulse?schema=public
+      BACKEND_PORT: 3001
+      GLOBAL_PREFIX: api/v1
+      WEB_ORIGIN: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder' }}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+      NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /dashboard
+      NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: /dashboard
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder' }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY || 'sk_test_placeholder' }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || 'test-openrouter-key' }}
+      E2E_CLERK_USER_EMAIL: ${{ secrets.E2E_CLERK_USER_EMAIL }}
+      FLOWPULSE_ADMIN_EMAILS: ${{ secrets.E2E_CLERK_USER_EMAIL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run typecheck
+        run: npm run typecheck
+
+      - name: Run database migrations on test database
+        run: npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+
+      - name: Run unit and integration tests
+        run: npm run test
+
+      - name: Compile applications
+        run: npm run build
+
+      - name: Validate Docker Compose configurations
+        run: |
+          docker compose config > /dev/null
+          docker compose -f docker-compose.prod.yml config > /dev/null
+          echo "Docker compose configurations: PASS"
+
+      - name: Terraform format check
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: Terraform validate bootstrap module
+        run: |
+          terraform -chdir=infra/terraform/bootstrap init -backend=false
+          terraform -chdir=infra/terraform/bootstrap validate
+
+      - name: Terraform validate production environment
+        run: |
+          terraform -chdir=infra/terraform/environments/production init -backend=false
+          terraform -chdir=infra/terraform/environments/production validate
+
+      - name: Terraform synthetic canary secret verification
+        run: ./scripts/verify-terraform-secrets.sh
+
+      - name: Docker build-context sentinel probe
+        run: ./scripts/verify-docker-context.sh probe
+
+      - name: Build production API image
+        run: docker build -f apps/api/Dockerfile -t flowpulse-api:test .
+
+      - name: Build production Web image
+        run: |
+          docker build -f apps/web/Dockerfile \
+            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_placeholder \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard \
+            --build-arg NEXT_PUBLIC_API_URL=http://localhost:3001/api/v1 \
+            -t flowpulse-web:test .
+
+      - name: Inspect production container images for zero secrets and non-root execution
+        run: |
+          ./scripts/verify-docker-context.sh inspect flowpulse-api:test flowpulse-web:test
+          API_USER=$(docker inspect flowpulse-api:test -f '{{.Config.User}}')
+          WEB_USER=$(docker inspect flowpulse-web:test -f '{{.Config.User}}')
+          if [ "$API_USER" != "node" ] || [ "$WEB_USER" != "node" ]; then
+            echo "Error: Containers must execute as user 'node', got api=$API_USER web=$WEB_USER"
+            exit 1
+          fi
+          echo "Container non-root inspection: PASS"
+
+      - name: Check E2E credentials for trusted branch runs
+        id: check-e2e-secrets
+        run: |
+          IS_TRUSTED=false
+          if [ "${{ github.repository }}" = "DomBarretone/flowpulse" ] && ([ "${{ github.event_name }}" = "push" ] || [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]); then
+            IS_TRUSTED=true
+          fi
+          echo "is_trusted=$IS_TRUSTED" >> $GITHUB_OUTPUT
+
+          if [ "$IS_TRUSTED" = "true" ]; then
+            if [ -z "${{ secrets.CLERK_SECRET_KEY }}" ] || [ -z "${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" ] || [ -z "${{ secrets.E2E_CLERK_USER_EMAIL }}" ]; then
+              echo "::error::Trusted branch run requires CLERK_SECRET_KEY, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, and E2E_CLERK_USER_EMAIL secrets. Silently skipping tests is forbidden."
+              exit 1
+            fi
+            echo "run_e2e=true" >> $GITHUB_OUTPUT
+          else
+            if [ -n "${{ secrets.CLERK_SECRET_KEY }}" ] && [ -n "${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" ] && [ -n "${{ secrets.E2E_CLERK_USER_EMAIL }}" ]; then
+              echo "run_e2e=true" >> $GITHUB_OUTPUT
+            else
+              echo "run_e2e=false" >> $GITHUB_OUTPUT
+              echo "Notice: Non-trusted fork run without Clerk secrets; skipping E2E."
+            fi
+          fi
+
+      - name: Install Playwright Browsers
+        if: steps.check-e2e-secrets.outputs.run_e2e == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify clean ports and processes before E2E
+        if: steps.check-e2e-secrets.outputs.run_e2e == 'true'
+        run: |
+          echo "=== Docker Containers ==="
+          docker ps
+          echo "=== Port Check (3000, 3001, 3002) ==="
+          if command -v ss >/dev/null 2>&1; then
+            ss -tulpn | grep -E ':(3000|3001|3002)\b' || echo "Ports 3000, 3001, 3002 are clean and free."
+          elif command -v lsof >/dev/null 2>&1; then
+            lsof -i :3000 -i :3001 -i :3002 || echo "Ports 3000, 3001, 3002 are clean and free."
+          else
+            echo "Neither ss nor lsof available to check ports."
+          fi
+
+      - name: Run Playwright E2E Tests
+        if: steps.check-e2e-secrets.outputs.run_e2e == 'true'
+        env:
+          CI: true
+          OPENROUTER_BASE_URL: http://127.0.0.1:3002
+          OPENROUTER_API_KEY: e2e-local-test-key
+        run: npm run test:e2e

@@ -1,0 +1,253 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate:
+    name: Pre-Deploy Validation Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: flowpulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d flowpulse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flowpulse?schema=public
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_placeholder
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+      NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /dashboard
+      NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: /dashboard
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+      CLERK_PUBLISHABLE_KEY: pk_test_placeholder
+      CLERK_SECRET_KEY: sk_test_placeholder
+      OPENROUTER_API_KEY: test-openrouter-key
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run typecheck
+        run: npm run typecheck
+
+      - name: Run database migrations on test database
+        run: npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+
+      - name: Run unit and integration tests
+        run: npm run test
+
+      - name: Compile applications
+        run: npm run build
+
+      - name: Terraform format check
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: Terraform validate production
+        run: |
+          terraform -chdir=infra/terraform/environments/production init -backend=false
+          terraform -chdir=infra/terraform/environments/production validate
+
+  deploy:
+    name: Production Release
+    needs: [validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.11.0
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Install dependencies for migration
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+
+      - name: Check Direct Database Connection Mode
+        env:
+          PROD_DB_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if echo "$PROD_DB_URL" | grep -q ":6543"; then
+            echo "::error::DATABASE_URL targets transaction pooler port 6543. Direct port 5432 is required for advisory lock migrations."
+            exit 1
+          fi
+          if ! echo "$PROD_DB_URL" | grep -q ":5432"; then
+            echo "::error::DATABASE_URL must explicitly target PostgreSQL port 5432 for migrations."
+            exit 1
+          fi
+          echo "Database connection check: direct session port 5432 confirmed."
+
+      - name: Execute Controlled Database Migration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+
+      - name: Terraform Initialize Production Environment
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+        run: |
+          terraform -chdir=infra/terraform/environments/production init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=production/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Bootstrap ECR Repositories on First Deployment
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          FLOWPULSE_ADMIN_EMAILS: ${{ secrets.FLOWPULSE_ADMIN_EMAILS }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          ACM_CERTIFICATE_ARN: ${{ secrets.ACM_CERTIFICATE_ARN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME || secrets.FLOWPULSE_DOMAIN }}
+          DESIRED_COUNT: ${{ vars.DESIRED_COUNT || 2 }}
+        run: |
+          if terraform -chdir=infra/terraform/environments/production state list | grep -q '^module\.ecr\.'; then
+            echo "ECR repositories already managed by Terraform state. Skipping bootstrap."
+          else
+            echo "ECR repositories not found in Terraform state. Bootstrapping module.ecr..."
+            terraform -chdir=infra/terraform/environments/production apply -auto-approve \
+              -target=module.ecr \
+              -var="api_image_tag=${{ github.sha }}" \
+              -var="web_image_tag=${{ github.sha }}" \
+              -var="acm_certificate_arn=${ACM_CERTIFICATE_ARN}" \
+              -var="clerk_publishable_key=${CLERK_PUBLISHABLE_KEY}" \
+              -var="web_origin=https://${DOMAIN_NAME}" \
+              -var="desired_count=${DESIRED_COUNT}" \
+              -var="database_url=${DATABASE_URL}" \
+              -var="clerk_secret_key=${CLERK_SECRET_KEY}" \
+              -var="openrouter_api_key=${OPENROUTER_API_KEY}" \
+              -var="flowpulse_admin_emails=${FLOWPULSE_ADMIN_EMAILS}"
+          fi
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push API Container to ECR
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f apps/api/Dockerfile -t "${REGISTRY}/flowpulse-api:${IMAGE_TAG}" .
+          docker push "${REGISTRY}/flowpulse-api:${IMAGE_TAG}"
+          echo "Pushed API image digest: $(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/flowpulse-api:${IMAGE_TAG}")"
+
+      - name: Build and Push Web Container to ECR
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME || secrets.FLOWPULSE_DOMAIN }}
+        run: |
+          docker build -f apps/web/Dockerfile \
+            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard \
+            --build-arg NEXT_PUBLIC_API_URL="https://${DOMAIN_NAME}/api/v1" \
+            -t "${REGISTRY}/flowpulse-web:${IMAGE_TAG}" .
+          docker push "${REGISTRY}/flowpulse-web:${IMAGE_TAG}"
+          echo "Pushed Web image digest: $(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/flowpulse-web:${IMAGE_TAG}")"
+
+      - name: Terraform Apply Infrastructure and Task Definition Update
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          FLOWPULSE_ADMIN_EMAILS: ${{ secrets.FLOWPULSE_ADMIN_EMAILS }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          ACM_CERTIFICATE_ARN: ${{ secrets.ACM_CERTIFICATE_ARN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME || secrets.FLOWPULSE_DOMAIN }}
+          DESIRED_COUNT: ${{ vars.DESIRED_COUNT || 2 }}
+        run: |
+          terraform -chdir=infra/terraform/environments/production apply -auto-approve \
+            -var="api_image_tag=${{ github.sha }}" \
+            -var="web_image_tag=${{ github.sha }}" \
+            -var="acm_certificate_arn=${ACM_CERTIFICATE_ARN}" \
+            -var="clerk_publishable_key=${CLERK_PUBLISHABLE_KEY}" \
+            -var="web_origin=https://${DOMAIN_NAME}" \
+            -var="desired_count=${DESIRED_COUNT}" \
+            -var="database_url=${DATABASE_URL}" \
+            -var="clerk_secret_key=${CLERK_SECRET_KEY}" \
+            -var="openrouter_api_key=${OPENROUTER_API_KEY}" \
+            -var="flowpulse_admin_emails=${FLOWPULSE_ADMIN_EMAILS}"
+
+      - name: Await ECS Services Rollout Stability
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+        run: |
+          aws ecs wait services-stable \
+            --cluster flowpulse-production-cluster \
+            --services flowpulse-production-api flowpulse-production-web \
+            --region "${AWS_REGION}"
+
+      - name: Execute Automated HTTPS Smoke Tests
+        env:
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME || secrets.FLOWPULSE_DOMAIN }}
+        run: ./scripts/smoke-test.sh "${DOMAIN_NAME}"

@@ -51,3 +51,14 @@ yarn-error.log*
 # Antigravity & Agent temp
 .agents/mcp_config.json
 *.tsbuildinfo
+
+# Terraform local state, cache and plan artifacts
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.*
+terraform.tfvars
+*.auto.tfvars
+!terraform.tfvars.example
+!.terraform.lock.hcl
