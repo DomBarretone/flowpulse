@@ -6,7 +6,8 @@ set -euo pipefail
 # do NOT leak or persist in terraform plan JSON or state outputs.
 # STRICT RULE: Outputs strictly PASS or FAIL without logging credentials.
 
-CANARY="FLOWPULSE_TERRAFORM_SECRET_CANARY_DO_NOT_PERSIST"
+SECRET_CANARY="FLOWPULSE_TERRAFORM_SECRET_CANARY_DO_NOT_PERSIST"
+ADMIN_EMAIL_CANARY="FLOWPULSE_TERRAFORM_ADMIN_EMAIL_CANARY_DO_NOT_PERSIST@example.invalid"
 PROBE_DIR=$(mktemp -d /tmp/tf-canary-probe-XXXXXX)
 
 cleanup() {
@@ -64,16 +65,28 @@ variable "openrouter_api_key_version" {
   default = 1
 }
 
+variable "flowpulse_admin_emails" {
+  type      = string
+  sensitive = true
+}
+
+variable "flowpulse_admin_emails_version" {
+  type    = number
+  default = 1
+}
+
 module "secrets" {
   source = "./secrets"
 
-  environment                = "probe"
-  database_url               = var.database_url
-  database_url_version       = var.database_url_version
-  clerk_secret_key           = var.clerk_secret_key
-  clerk_secret_key_version   = var.clerk_secret_key_version
-  openrouter_api_key         = var.openrouter_api_key
-  openrouter_api_key_version = var.openrouter_api_key_version
+  environment                    = "probe"
+  database_url                   = var.database_url
+  database_url_version           = var.database_url_version
+  clerk_secret_key               = var.clerk_secret_key
+  clerk_secret_key_version       = var.clerk_secret_key_version
+  openrouter_api_key             = var.openrouter_api_key
+  openrouter_api_key_version     = var.openrouter_api_key_version
+  flowpulse_admin_emails         = var.flowpulse_admin_emails
+  flowpulse_admin_emails_version = var.flowpulse_admin_emails_version
 }
 EOF
 
@@ -92,9 +105,10 @@ terraform -chdir="$PROBE_DIR" init -backend=false >/dev/null 2>&1
 
 # Run plan passing the canary into all secret variables
 terraform -chdir="$PROBE_DIR" plan \
-  -var="database_url=$CANARY" \
-  -var="clerk_secret_key=$CANARY" \
-  -var="openrouter_api_key=$CANARY" \
+  -var="database_url=$SECRET_CANARY" \
+  -var="clerk_secret_key=$SECRET_CANARY" \
+  -var="openrouter_api_key=$SECRET_CANARY" \
+  -var="flowpulse_admin_emails=$ADMIN_EMAIL_CANARY" \
   -out="$PROBE_DIR/probe.tfplan" >/dev/null 2>&1
 
 # Export plan to JSON
@@ -104,8 +118,9 @@ terraform -chdir="$PROBE_DIR" show -json "$PROBE_DIR/probe.tfplan" > "$PROBE_DIR
 if node -e "
   const fs = require('fs');
   const plan = JSON.parse(fs.readFileSync('$PROBE_DIR/plan.json', 'utf8'));
-  const inResources = JSON.stringify(plan.resource_changes || {}).includes('$CANARY');
-  const inPlanned = JSON.stringify(plan.planned_values || {}).includes('$CANARY');
+  const canaries = ['$SECRET_CANARY', '$ADMIN_EMAIL_CANARY'];
+  const inResources = canaries.some((c) => JSON.stringify(plan.resource_changes || {}).includes(c));
+  const inPlanned = canaries.some((c) => JSON.stringify(plan.planned_values || {}).includes(c));
   if (inResources || inPlanned) {
     process.exit(1);
   }
