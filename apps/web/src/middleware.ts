@@ -1,6 +1,14 @@
 import { clerkMiddleware } from '@clerk/nextjs/server';
+import { type NextFetchEvent, type NextRequest, NextResponse } from 'next/server';
 
-export default clerkMiddleware();
+const clerk = clerkMiddleware();
+
+export default function middleware(req: NextRequest, event: NextFetchEvent) {
+  if (req.nextUrl.pathname === '/health') {
+    return NextResponse.next();
+  }
+  return clerk(req, event);
+}
 
 export const config = {
   runtime: 'nodejs',

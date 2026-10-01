@@ -25,7 +25,7 @@ resource "aws_lb_target_group" "web" {
 
   health_check {
     enabled             = true
-    path                = "/"
+    path                = "/health"
     port                = "3000"
     protocol            = "HTTP"
     matcher             = "200"

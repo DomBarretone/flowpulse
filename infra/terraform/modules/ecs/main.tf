@@ -249,7 +249,7 @@ resource "aws_ecs_task_definition" "web" {
         }
       }
       healthCheck = {
-        command     = ["CMD-SHELL", "node -e \"fetch('http://localhost:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+        command     = ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
         interval    = 30
         timeout     = 5
         retries     = 3
