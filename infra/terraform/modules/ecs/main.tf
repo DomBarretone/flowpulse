@@ -238,6 +238,10 @@ resource "aws_ecs_task_definition" "web" {
         {
           name  = "PORT"
           value = "3000"
+        },
+        {
+          name  = "HOSTNAME"
+          value = "0.0.0.0"
         }
       ]
       logConfiguration = {
