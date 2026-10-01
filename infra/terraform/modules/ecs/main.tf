@@ -224,6 +224,12 @@ resource "aws_ecs_task_definition" "web" {
           protocol      = "tcp"
         }
       ]
+      secrets = [
+        {
+          name      = "CLERK_SECRET_KEY"
+          valueFrom = var.clerk_secret_key_arn
+        }
+      ]
       environment = [
         {
           name  = "NODE_ENV"
