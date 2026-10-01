@@ -118,10 +118,6 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
           audience: sts.amazonaws.com
 
-      - name: Log in to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
       - name: Install dependencies for migration
         run: npm ci
 
@@ -146,6 +142,51 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+
+      - name: Terraform Initialize Production Environment
+        env:
+          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+        run: |
+          terraform -chdir=infra/terraform/environments/production init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=production/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Bootstrap ECR Repositories on First Deployment
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          FLOWPULSE_ADMIN_EMAILS: ${{ secrets.FLOWPULSE_ADMIN_EMAILS }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          ACM_CERTIFICATE_ARN: ${{ secrets.ACM_CERTIFICATE_ARN }}
+          DOMAIN_NAME: ${{ vars.DOMAIN_NAME || secrets.FLOWPULSE_DOMAIN }}
+          DESIRED_COUNT: ${{ vars.DESIRED_COUNT || 2 }}
+        run: |
+          if terraform -chdir=infra/terraform/environments/production state list | grep -q '^module\.ecr\.'; then
+            echo "ECR repositories already managed by Terraform state. Skipping bootstrap."
+          else
+            echo "ECR repositories not found in Terraform state. Bootstrapping module.ecr..."
+            terraform -chdir=infra/terraform/environments/production apply -auto-approve \
+              -target=module.ecr \
+              -var="api_image_tag=${{ github.sha }}" \
+              -var="web_image_tag=${{ github.sha }}" \
+              -var="acm_certificate_arn=${ACM_CERTIFICATE_ARN}" \
+              -var="clerk_publishable_key=${CLERK_PUBLISHABLE_KEY}" \
+              -var="web_origin=https://${DOMAIN_NAME}" \
+              -var="desired_count=${DESIRED_COUNT}" \
+              -var="database_url=${DATABASE_URL}" \
+              -var="clerk_secret_key=${CLERK_SECRET_KEY}" \
+              -var="openrouter_api_key=${OPENROUTER_API_KEY}" \
+              -var="flowpulse_admin_emails=${FLOWPULSE_ADMIN_EMAILS}"
+          fi
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and Push API Container to ECR
         env:
@@ -173,18 +214,6 @@ jobs:
             -t "${REGISTRY}/flowpulse-web:${IMAGE_TAG}" .
           docker push "${REGISTRY}/flowpulse-web:${IMAGE_TAG}"
           echo "Pushed Web image digest: $(docker inspect --format='{{index .RepoDigests 0}}' "${REGISTRY}/flowpulse-web:${IMAGE_TAG}")"
-
-      - name: Terraform Initialize Production Environment
-        env:
-          TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
-          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-        run: |
-          terraform -chdir=infra/terraform/environments/production init \
-            -backend-config="bucket=${TF_STATE_BUCKET}" \
-            -backend-config="key=production/terraform.tfstate" \
-            -backend-config="region=${AWS_REGION}" \
-            -backend-config="encrypt=true" \
-            -backend-config="use_lockfile=true"
 
       - name: Terraform Apply Infrastructure and Task Definition Update
         env:
