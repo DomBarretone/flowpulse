@@ -85,7 +85,8 @@ resource "aws_iam_role_policy" "ecs_execution_ssm" {
         Resource = [
           var.database_url_arn,
           var.clerk_secret_key_arn,
-          var.openrouter_api_key_arn
+          var.openrouter_api_key_arn,
+          var.flowpulse_admin_emails_arn
         ]
       }
     ]
@@ -151,6 +152,10 @@ resource "aws_ecs_task_definition" "api" {
         {
           name      = "OPENROUTER_API_KEY"
           valueFrom = var.openrouter_api_key_arn
+        },
+        {
+          name      = "FLOWPULSE_ADMIN_EMAILS"
+          valueFrom = var.flowpulse_admin_emails_arn
         }
       ]
       environment = [

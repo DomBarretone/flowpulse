@@ -39,3 +39,17 @@ resource "aws_ssm_parameter" "openrouter_api_key" {
     ManagedBy   = "Terraform"
   }
 }
+
+resource "aws_ssm_parameter" "flowpulse_admin_emails" {
+  name             = "/flowpulse/${var.environment}/admin-emails"
+  type             = "SecureString"
+  value_wo         = var.flowpulse_admin_emails
+  value_wo_version = var.flowpulse_admin_emails_version
+
+  tags = {
+    Name        = "flowpulse-${var.environment}-admin-emails"
+    Environment = var.environment
+    Project     = "FlowPulse"
+    ManagedBy   = "Terraform"
+  }
+}

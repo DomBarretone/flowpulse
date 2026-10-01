@@ -23,13 +23,15 @@ module "alb" {
 module "secrets" {
   source = "../../modules/secrets"
 
-  environment                = var.environment
-  database_url               = var.database_url
-  database_url_version       = var.database_url_version
-  clerk_secret_key           = var.clerk_secret_key
-  clerk_secret_key_version   = var.clerk_secret_key_version
-  openrouter_api_key         = var.openrouter_api_key
-  openrouter_api_key_version = var.openrouter_api_key_version
+  environment                    = var.environment
+  database_url                   = var.database_url
+  database_url_version           = var.database_url_version
+  clerk_secret_key               = var.clerk_secret_key
+  clerk_secret_key_version       = var.clerk_secret_key_version
+  openrouter_api_key             = var.openrouter_api_key
+  openrouter_api_key_version     = var.openrouter_api_key_version
+  flowpulse_admin_emails         = var.flowpulse_admin_emails
+  flowpulse_admin_emails_version = var.flowpulse_admin_emails_version
 }
 
 module "ecs" {
@@ -47,6 +49,7 @@ module "ecs" {
   database_url_arn            = module.secrets.database_url_arn
   clerk_secret_key_arn        = module.secrets.clerk_secret_key_arn
   openrouter_api_key_arn      = module.secrets.openrouter_api_key_arn
+  flowpulse_admin_emails_arn  = module.secrets.flowpulse_admin_emails_arn
   clerk_publishable_key       = var.clerk_publishable_key
   web_origin                  = var.web_origin
 }

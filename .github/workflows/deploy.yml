@@ -191,6 +191,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          FLOWPULSE_ADMIN_EMAILS: ${{ secrets.FLOWPULSE_ADMIN_EMAILS }}
           CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
           ACM_CERTIFICATE_ARN: ${{ secrets.ACM_CERTIFICATE_ARN }}
           DOMAIN_NAME: ${{ vars.DOMAIN_NAME || secrets.FLOWPULSE_DOMAIN }}
@@ -205,7 +206,8 @@ jobs:
             -var="desired_count=${DESIRED_COUNT}" \
             -var="database_url=${DATABASE_URL}" \
             -var="clerk_secret_key=${CLERK_SECRET_KEY}" \
-            -var="openrouter_api_key=${OPENROUTER_API_KEY}"
+            -var="openrouter_api_key=${OPENROUTER_API_KEY}" \
+            -var="flowpulse_admin_emails=${FLOWPULSE_ADMIN_EMAILS}"
 
       - name: Await ECS Services Rollout Stability
         env:

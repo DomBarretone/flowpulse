@@ -80,3 +80,16 @@ variable "openrouter_api_key_version" {
   description = "Version counter for openrouter_api_key write-only updates"
   default     = 1
 }
+
+variable "flowpulse_admin_emails" {
+  type        = string
+  description = "Comma-separated list of authorized admin emails for RBAC promotion"
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "flowpulse_admin_emails_version" {
+  type        = number
+  description = "Version counter for flowpulse_admin_emails write-only updates"
+  default     = 1
+}

@@ -61,6 +61,11 @@ variable "openrouter_api_key_arn" {
   description = "ARN of the openrouter_api_key SSM parameter"
 }
 
+variable "flowpulse_admin_emails_arn" {
+  type        = string
+  description = "ARN of the flowpulse_admin_emails SSM parameter"
+}
+
 variable "clerk_publishable_key" {
   type        = string
   description = "Clerk publishable key for backend JWT verification"
