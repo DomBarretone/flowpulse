@@ -25,6 +25,7 @@ Este documento consolida o relatório formal de evidências técnicas, arquitetu
 
 A aplicação encontra-se implantada e operacional na AWS através do pipeline contínuo de entrega:
 
+### 2.1 Conectividade, Roteamento e Serviços ECS Fargate
 - **Domínio Público de Produção (HTTPS):** [`https://flowpulse.viniciusbarroso.com.br`](https://flowpulse.viniciusbarroso.com.br)
 - **Endpoint Técnico de Saúde do Web:**
   - Requisição: `GET https://flowpulse.viniciusbarroso.com.br/health`
@@ -37,12 +38,40 @@ A aplicação encontra-se implantada e operacional na AWS através do pipeline c
 - **Status do Serviço ECS API (`flowpulse-production-api`):**
   - `DesiredCount: 1` | `RunningCount: 1` | `PendingCount: 0` | `RolloutState: COMPLETED`
 - **Status do Serviço ECS Web (`flowpulse-production-web`):**
-  - Definição de Tarefa Ativa: `flowpulse-production-web:6`
+  - Definição de Tarefa Ativa: `flowpulse-production-web:6` (ou superior)
   - `DesiredCount: 1` | `RunningCount: 1` | `PendingCount: 0` | `RolloutState: COMPLETED`
   - `LastStatus: RUNNING` | `HealthStatus: HEALTHY`
 - **Governança de Custos vs. Alta Disponibilidade:**
   - O valor `desired_count = 1` foi configurado intencionalmente para fins de governança e controle de custos no ambiente acadêmico/laboratorial.
   - A arquitetura de infraestrutura como código (`infra/terraform/modules/ecs/`) e a topologia de rede (VPC em 2 Zonas de Disponibilidade com Application Load Balancer multi-AZ) suportam nativamente Alta Disponibilidade com `desired_count = 2` ou superior sem necessidade de refatoração estrutural.
+
+### 2.2 Autenticação em Produção (Clerk Production Instance)
+- **Instância de Produção Ativa:** O ambiente produtivo opera com uma **Clerk Production Instance** dedicada e verificada sob o domínio canônico `flowpulse.viniciusbarroso.com.br`.
+- **Experiência do Usuário:** O banner de aviso *"Development mode"* foi completamente eliminado da interface pública de autenticação (`/sign-in` e `/sign-up`), operando com fluxo seguro de e-mail e senha.
+- **Sincronia Frontend e Backend:** O frontend Next.js (compilado com `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` de produção `pk_live_...`) e o backend NestJS (autenticando via `CLERK_SECRET_KEY` de produção `sk_live_...`) estão estritamente vinculados à mesma instância de produção.
+- **Verificação via API:** A chave de backend foi auditada diretamente contra a Clerk Backend API via `GET https://api.clerk.com/v1/instance`, confirmando a resposta com `environment_type = "production"`.
+
+### 2.3 Governança de Segredos no AWS SSM e Rotações Write-Only
+Os segredos de runtime da aplicação em produção são injetados exclusivamente a partir do AWS Systems Manager (SSM) Parameter Store:
+- `/flowpulse/production/clerk-secret-key`: **`Version = 2`**
+- `/flowpulse/production/admin-emails`: **`Version = 2`**
+- `/flowpulse/production/database-url`: `Version = 1`
+- `/flowpulse/production/openrouter-api-key`: `Version = 1`
+
+**Mecanismo Arquitetural de Rotação Segura (`value_wo_version`):**
+O módulo Terraform (`infra/terraform/modules/secrets/`) utiliza os atributos `value_wo` (*write-only*) e `value_wo_version` do recurso `aws_ssm_parameter`. Por diretriz de segurança, atributos `value_wo` não são persistidos no arquivo de estado do Terraform (`terraform.tfstate`), evitando qualquer vazamento de credenciais no bucket S3. De acordo com o contrato do AWS Provider, o Terraform só dispara uma atualização real no SSM Parameter Store quando o contador `value_wo_version` é explicitamente incrementado. Esse mecanismo garante que rotações de credenciais (como a promoção da chave Clerk e da lista de administradores para a versão 2) sejam **intencionais, auditáveis e controladas**, sem regravações desnecessárias a cada execução do pipeline de CD.
+
+### 2.4 Isolamento Arquitetural entre CI (Playwright) e CD (Produção)
+Para manter o princípio do menor privilégio e proteger o ambiente de produção contra efeitos colaterais de testes automatizados:
+- **CI / E2E (`.github/workflows/ci.yml`):**
+  - Utiliza credenciais dedicadas da **Clerk Development Instance** (`E2E_CLERK_PUBLISHABLE_KEY`, `E2E_CLERK_SECRET_KEY`, `E2E_CLERK_USER_EMAIL`);
+  - O runner executa a aplicação localmente e roda a suíte Playwright contra o double determinístico local do OpenRouter (`http://127.0.0.1:3002`);
+  - A execução é serializada (`workers: 1`, `fullyParallel: false`) para garantir isolamento de portas e do banco de teste.
+  - Zero dependência ou exposição das credenciais `pk_live_...` e `sk_live_...`.
+- **CD / Produção (`.github/workflows/deploy.yml`):**
+  - Autenticação com a AWS via **GitHub OIDC** assumindo a Role IAM sem credenciais estáticas de longa duração;
+  - Utiliza exclusivamente as credenciais da **Clerk Production Instance** (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`);
+  - Realiza compilação da imagem Docker Web embutindo a chave pública de produção e entrega as variáveis sensíveis aos containers Fargate via SSM Parameter Store.
 
 ---
 
@@ -71,9 +100,68 @@ A aplicação encontra-se implantada e operacional na AWS através do pipeline c
 
 ---
 
-## 5. Arquitetura Final da Solução
+## 5. Cenário Demonstrativo Real de Produção (Negócio, Incidente e IA)
 
-### 5.1 Fluxo de Comunicação Verificado
+Para homologação prática e comprovação do comportamento do sistema em ambiente de nuvem real, foi registrado e executado um cenário operacional completo na instância de produção:
+
+### 5.1 Automação Monitorada em Produção
+- **Nome:** `Sincronização de Pedidos ERP`
+- **Descrição:** `Sincroniza pedidos aprovados do e-commerce com o ERP corporativo e registra falhas de integração para acompanhamento operacional.`
+- **Criticidade:** `CRITICAL`
+- **Duração Esperada (SLA):** `30 segundos`
+- **Estado Operacional:** `ACTIVE`
+- **Status da Integração:** `VALIDATED` (após envio prévio de evento de teste no onboarding)
+
+### 5.2 Ingestão de Execuções e Disparo de Incidente CRITICAL
+Foram ingeridas execuções operacionais reais através da API REST (`POST /api/v1/executions` autenticada pelo hash SHA-256 de `x-api-key`):
+- **4 execuções com status `SUCCESS`:** durações reais de 10.500 ms, 13.000 ms, 15.500 ms e 18.000 ms (média real de 14.250 ms = 14,25 segundos, dentro do SLA esperado de 30s);
+- **1 execução com status `FAILED`**:
+  - Duração registrada: `47.250 ms` (ultrapassou o SLA de 30s);
+  - Mensagem de erro capturada: `"Timeout ao enviar pedido para o ERP: serviço de integração não respondeu dentro do limite esperado."`;
+  - **Ação do Sistema:** Como a criticidade da automação é `CRITICAL`, o motor de regras de negócio do FlowPulse gerou automaticamente um incidente formal em status `OPEN` com severidade `CRITICAL`.
+
+### 5.3 Ciclo de Vida do Incidente em Produção
+O incidente percorreu todas as transições da máquina de estados, registradas na trilha de auditoria imutável (`incident_events`):
+1. **`OPEN`:** Gerado automaticamente pela falha da execução;
+2. **`ACKNOWLEDGED`:** Assumido pelo analista humano **Vinicius Barroso**.
+   - **MTTA Observado (*Mean Time to Acknowledge*):** **55 segundos**;
+3. **`INVESTIGATING`:** Analista inicia os procedimentos diagnósticos e aciona o suporte de IA;
+4. **`RESOLVED`:** Conclusão formal com preenchimento da nota explicativa técnica obrigatória registrada pelo analista: *"O serviço de integração com o ERP foi restabelecido após ajuste de conectividade e aumento temporário do timeout. O processamento foi validado novamente com sucesso e o fluxo voltou à operação normal."*
+   - **MTTR Observado (*Mean Time to Resolve*):** **2 minutos e 50 segundos** (170 segundos totais desde a abertura).
+
+### 5.4 Diagnóstico Assistido por Inteligência Artificial (OpenRouter)
+Durante a fase de investigação, a análise consultiva foi disparada contra o gateway OpenRouter:
+- **Modelo Utilizado:** `anthropic/claude-haiku-4.5`
+- **Guardrails Aplicados:** Payloads e metadados foram previamente higienizados pelo `SanitizerService` antes do envio. A IA atuou de maneira estritamente **consultiva**, sem autonomia para alterar o status do incidente ou acionar comandos no ERP.
+- **Estrutura Validada:**
+  - **Resumo Diagnóstico:** Identificação consultiva de que a chamada ao serviço de integração ERP excedeu o tempo limite configurado de 30 segundos;
+  - **Causas Prováveis:** Serviço de integração ERP indisponível ou não acessível; degradação de performance / latência elevada; congestionamento de rede ou problema de conectividade; limite de timeout insuficiente;
+  - **Evidências:** Duração registrada de 47.250 ms frente ao limite esperado de 30.000 ms e mensagem de erro indicando timeout na integração;
+  - **Próximos Passos:** Verificar status e disponibilidade do serviço de integração ERP, auditar latência e estabilidade da rota de rede e reprocessar o lote de pedidos após normalização;
+  - **Grau de Confiança:** **72%**.
+
+### 5.5 Métricas Consolidadas no Dashboard de Produção
+Os KPIs operacionais na tela `/dashboard` em produção refletem com exatidão o cenário demonstrado:
+- **Automações Ativas:** `1`
+- **Volume de Execuções:** `5`
+- **Taxa de Sucesso:** `80,00%` (4 sucessos em 5 execuções operacionais)
+- **Falhas & Timeouts:** `1`
+- **Incidentes Abertos:** `0` (incidente devidamente resolvido)
+- **MTTA Médio:** `55s`
+- **MTTR Médio:** `2m 50s`
+- **Gráfico de Série Temporal:** 4 sucessos e 1 falha distribuídos temporalmente.
+
+### 5.6 Regra Operacional: Isolamento de Execuções de Teste (`is_test = true`)
+Durante o processo de ativação da automação (Fluxo 1), uma execução com `is_test: true` e `status: SUCCESS` foi processada para comprovar a viabilidade técnica da credencial.
+- **Auditoria e Integridade:** Essa execução de teste permanece devidamente armazenada na tabela `executions` para fins de governança e rastreabilidade histórica.
+- **Isolamento de KPIs:** No serviço do Dashboard (`DashboardService`), todas as consultas operacionais (`groupBy` de resumo e agregação temporal por `date_trunc`) filtram estritamente por **`is_test: false`**.
+- **Resultado:** A execução de teste não contaminou as métricas de produção. Sem essa segregação, o Dashboard exibiria 6 execuções e 83,33% de sucesso. Com a segregação, o Dashboard exibe com precisão **5 execuções e 80,00% de sucesso**.
+
+---
+
+## 6. Arquitetura Final da Solução
+
+### 6.1 Fluxo de Comunicação Verificado
 
 ```text
 Usuário (Navegador)
@@ -92,7 +180,7 @@ Application Load Balancer (ALB)
                                   └── Tracing e Telemetria OTLP ───────────► OpenTelemetry Collector
 ```
 
-### 5.2 Divisão de Responsabilidades de Infraestrutura
+### 6.2 Divisão de Responsabilidades de Infraestrutura
 
 - **Bootstrap Manual / Controlado Inicial:**
   - Provedor GitHub OIDC e Role IAM com política de confiança para o GitHub Actions;
@@ -108,7 +196,7 @@ Application Load Balancer (ALB)
 
 ---
 
-## 6. Resultados Reais da Suíte de Testes e Qualidade
+## 7. Resultados Reais da Suíte de Testes e Qualidade
 
 | Verificação | Escopo | Resultado Comprovado |
 |---|---|:---:|
@@ -126,15 +214,15 @@ Application Load Balancer (ALB)
 
 ---
 
-## 7. Operação Acadêmica, Governança de Custos e Teardown
+## 8. Operação Acadêmica, Governança de Custos e Teardown
 
-### 7.1 Dimensionamento no Ambiente de Avaliação
+### 8.1 Dimensionamento no Ambiente de Avaliação
 O serviço ECS em produção está configurado com `desired_count = 1` exclusivamente para **governança de custos na conta pessoal da AWS**, evitando cobranças excessivas de computação Fargate durante o período letivo.
 
 > [!CAUTION]
 > **AVISO IMPORTANTE:** **NÃO destruir o ambiente antes da avaliação/entrega pelos professores da PUC Minas.** A aplicação e o endpoint `/health` devem permanecer operacionais até a homologação da nota.
 
-### 7.2 Procedimento Seguro de Teardown Posterior à Avaliação
+### 8.2 Procedimento Seguro de Teardown Posterior à Avaliação
 Após o encerramento da avaliação da disciplina, para eliminar completamente cobranças contínuas de Application Load Balancer e instâncias Fargate, execute o procedimento de destruição:
 
 1. Obtenha credenciais com permissão administrativa na AWS (ou assuma a role IAM utilizada no pipeline).
@@ -167,12 +255,12 @@ Após o encerramento da avaliação da disciplina, para eliminar completamente c
 
 ---
 
-## 8. Configuração de Agentes de IA e Ferramental de Desenvolvimento
+## 9. Configuração de Agentes de IA e Ferramental de Desenvolvimento
 
-### 8.1 Governança do Agente (`AGENTS.md`)
+### 9.1 Governança do Agente (`AGENTS.md`)
 O repositório possui diretrizes canônicas em [AGENTS.md](../AGENTS.md) cobrindo comandos canônicos, stack tecnológica, políticas de segurança (nunca persistir chaves em texto claro, nunca rodar comandos destrutivos) e critérios estritos de conclusão de tarefas.
 
-### 8.2 Skills Especializadas (`.agents/skills`)
+### 9.2 Skills Especializadas (`.agents/skills`)
 Conjunto de habilidades modulares para orientar agentes autônomos nas seguintes disciplinas de engenharia:
 - `backend-architect` e `nestjs-expert`: padrões RESTful, injeção de dependência e guards;
 - `frontend-ui-engineering` e `web-design-guidelines`: acessibilidade WCAG e componentes React;
@@ -182,6 +270,6 @@ Conjunto de habilidades modulares para orientar agentes autônomos nas seguintes
 - `ci-cd-and-automation` e `github-actions-templates`: esteiras de integração e entrega contínua;
 - `terraform-style-guide`: convenções declarativas de HCL e modularização.
 
-### 8.3 Servidores MCP (Model Context Protocol)
+### 9.3 Servidores MCP (Model Context Protocol)
 - **Stitch:** Prototipagem e auditoria de fidelidade de telas;
 - **Context7:** Consulta dinâmica à documentação oficial atualizada de frameworks e bibliotecas (Next.js, NestJS, Prisma, Clerk, Terraform, Playwright).

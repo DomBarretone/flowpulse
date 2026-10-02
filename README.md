@@ -505,23 +505,33 @@ Segredos de runtime (`DATABASE_URL`, `CLERK_SECRET_KEY`, `OPENROUTER_API_KEY`) u
 terraform -chdir=infra/terraform/environments/production destroy
 ```
 
-### 4. Configuração Manual Necessária (GitHub Secrets & AWS OIDC)
+### 4. Configuração de Variáveis e Segredos (GitHub Actions & AWS OIDC)
 
-Para execução dos pipelines no GitHub Actions, configure no repositório:
+Para execução dos pipelines contínuos de CI e CD, o repositório utiliza segredos segregados entre o ambiente de testes e o ambiente de produção:
 
+#### Segredos de Produção (CD — `.github/workflows/deploy.yml`)
 | Tipo | Nome | Descrição |
 |---|---|---|
-| **Secret** | `AWS_OIDC_ROLE_ARN` | ARN da Role IAM com relação de confiança OIDC para o GitHub Actions |
-| **Secret** | `TF_STATE_BUCKET` | Nome do bucket S3 criado no bootstrap |
-| **Secret** | `DATABASE_URL` | String de conexão direta Supabase PostgreSQL (porta 5432) |
-| **Secret** | `CLERK_SECRET_KEY` | Chave secreta do Clerk para autenticação backend |
-| **Secret** | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Chave pública do Clerk |
-| **Secret** | `OPENROUTER_API_KEY` | Chave de API do OpenRouter |
-| **Secret** | `ACM_CERTIFICATE_ARN` | ARN do certificado SSL/TLS no AWS ACM para terminação HTTPS |
-| **Secret** | `E2E_CLERK_USER_EMAIL` | Email do usuário de teste configurado no Clerk |
-| **Variable** | `AWS_REGION` | Região AWS (ex.: `us-east-1`) |
-| **Variable** | `DOMAIN_NAME` | Domínio FQDN da aplicação apontado para o ALB |
-| **Variable** | `DESIRED_COUNT` | Quantidade de réplicas de tarefas ECS (ex.: `2` ou `1`) |
+| **Secret** | `AWS_OIDC_ROLE_ARN` | ARN da Role IAM com relação de confiança OIDC para deploy sem chaves estáticas |
+| **Secret** | `TF_STATE_BUCKET` | Nome do bucket S3 de armazenamento do Terraform Remote State |
+| **Secret** | `DATABASE_URL` | String de conexão PostgreSQL/Supabase em session mode, porta 5432 |
+| **Secret** | `CLERK_SECRET_KEY` | Chave secreta da **Clerk Production Instance** (`sk_live_...`) para a API e runtime server-side do Web |
+| **Secret** | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Chave pública da **Clerk Production Instance** (`pk_live_...`) para o Web |
+| **Secret** | `OPENROUTER_API_KEY` | Chave de API do gateway OpenRouter para análise consultiva |
+| **Secret** | `ACM_CERTIFICATE_ARN` | ARN do certificado SSL/TLS no AWS ACM para terminação HTTPS no ALB |
+| **Secret** | `FLOWPULSE_ADMIN_EMAILS` | Lista de e-mails autorizados para promoção de perfil `ADMIN` |
+| **Variable** | `AWS_REGION` | Região AWS de implantação (`us-east-1`) |
+| **Variable** | `DOMAIN_NAME` | Domínio canônico de produção (`flowpulse.viniciusbarroso.com.br`) |
+| **Variable** | `DESIRED_COUNT` | Quantidade de réplicas de tarefas ECS (`1` para laboratório, `2` para HA) |
+| **Variable** | `CLERK_SECRET_KEY_VERSION` | Versão write-only do parâmetro SSM da chave Clerk (atualmente `2`) |
+| **Variable** | `FLOWPULSE_ADMIN_EMAILS_VERSION` | Versão write-only do parâmetro SSM de admins (atualmente `2`) |
+
+#### Segredos de Testes Automatizados (CI / Playwright — `.github/workflows/ci.yml`)
+| Tipo | Nome | Descrição |
+|---|---|---|
+| **Secret** | `E2E_CLERK_PUBLISHABLE_KEY` | Chave pública da **Clerk Development Instance** (`pk_test_...`) para testes E2E |
+| **Secret** | `E2E_CLERK_SECRET_KEY` | Chave secreta da **Clerk Development Instance** (`sk_test_...`) para testes E2E |
+| **Secret** | `E2E_CLERK_USER_EMAIL` | E-mail do usuário analista de testes cadastrado no Clerk Development |
 
 ### 5. Testes de Fumaça HTTPS Pós-Deploy
 
