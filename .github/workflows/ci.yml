@@ -38,13 +38,13 @@ jobs:
       GLOBAL_PREFIX: api/v1
       WEB_ORIGIN: http://localhost:3000
       NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder' }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder' }}
       NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
       NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
       NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /dashboard
       NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: /dashboard
-      CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder' }}
-      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY || 'sk_test_placeholder' }}
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY || 'pk_test_placeholder' }}
+      CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY || 'sk_test_placeholder' }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || 'test-openrouter-key' }}
       E2E_CLERK_USER_EMAIL: ${{ secrets.E2E_CLERK_USER_EMAIL }}
       FLOWPULSE_ADMIN_EMAILS: ${{ secrets.E2E_CLERK_USER_EMAIL }}
@@ -145,13 +145,13 @@ jobs:
           echo "is_trusted=$IS_TRUSTED" >> $GITHUB_OUTPUT
 
           if [ "$IS_TRUSTED" = "true" ]; then
-            if [ -z "${{ secrets.CLERK_SECRET_KEY }}" ] || [ -z "${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" ] || [ -z "${{ secrets.E2E_CLERK_USER_EMAIL }}" ]; then
-              echo "::error::Trusted branch run requires CLERK_SECRET_KEY, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, and E2E_CLERK_USER_EMAIL secrets. Silently skipping tests is forbidden."
+            if [ -z "${{ secrets.E2E_CLERK_SECRET_KEY }}" ] || [ -z "${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}" ] || [ -z "${{ secrets.E2E_CLERK_USER_EMAIL }}" ]; then
+              echo "::error::Trusted branch run requires E2E_CLERK_SECRET_KEY, E2E_CLERK_PUBLISHABLE_KEY, and E2E_CLERK_USER_EMAIL secrets. Silently skipping tests is forbidden."
               exit 1
             fi
             echo "run_e2e=true" >> $GITHUB_OUTPUT
           else
-            if [ -n "${{ secrets.CLERK_SECRET_KEY }}" ] && [ -n "${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}" ] && [ -n "${{ secrets.E2E_CLERK_USER_EMAIL }}" ]; then
+            if [ -n "${{ secrets.E2E_CLERK_SECRET_KEY }}" ] && [ -n "${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}" ] && [ -n "${{ secrets.E2E_CLERK_USER_EMAIL }}" ]; then
               echo "run_e2e=true" >> $GITHUB_OUTPUT
             else
               echo "run_e2e=false" >> $GITHUB_OUTPUT
@@ -183,4 +183,9 @@ jobs:
           CI: true
           OPENROUTER_BASE_URL: http://127.0.0.1:3002
           OPENROUTER_API_KEY: e2e-local-test-key
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+          E2E_CLERK_USER_EMAIL: ${{ secrets.E2E_CLERK_USER_EMAIL }}
+          FLOWPULSE_ADMIN_EMAILS: ${{ secrets.E2E_CLERK_USER_EMAIL }}
         run: npm run test:e2e
