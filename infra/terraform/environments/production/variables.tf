@@ -65,7 +65,7 @@ variable "clerk_secret_key" {
 variable "clerk_secret_key_version" {
   type        = number
   description = "Version counter for clerk_secret_key write-only updates"
-  default     = 1
+  default     = 2
 }
 
 variable "openrouter_api_key" {
@@ -91,5 +91,5 @@ variable "flowpulse_admin_emails" {
 variable "flowpulse_admin_emails_version" {
   type        = number
   description = "Version counter for flowpulse_admin_emails write-only updates"
-  default     = 1
+  default     = 2
 }

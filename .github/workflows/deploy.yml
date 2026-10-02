@@ -165,6 +165,10 @@ jobs:
           ACM_CERTIFICATE_ARN: ${{ secrets.ACM_CERTIFICATE_ARN }}
           DOMAIN_NAME: ${{ vars.DOMAIN_NAME || secrets.FLOWPULSE_DOMAIN }}
           DESIRED_COUNT: ${{ vars.DESIRED_COUNT || 2 }}
+          DATABASE_URL_VERSION: ${{ vars.DATABASE_URL_VERSION || 1 }}
+          CLERK_SECRET_KEY_VERSION: ${{ vars.CLERK_SECRET_KEY_VERSION || 2 }}
+          OPENROUTER_API_KEY_VERSION: ${{ vars.OPENROUTER_API_KEY_VERSION || 1 }}
+          FLOWPULSE_ADMIN_EMAILS_VERSION: ${{ vars.FLOWPULSE_ADMIN_EMAILS_VERSION || 2 }}
         run: |
           if terraform -chdir=infra/terraform/environments/production state list | grep -q '^module\.ecr\.'; then
             echo "ECR repositories already managed by Terraform state. Skipping bootstrap."
@@ -181,7 +185,11 @@ jobs:
               -var="database_url=${DATABASE_URL}" \
               -var="clerk_secret_key=${CLERK_SECRET_KEY}" \
               -var="openrouter_api_key=${OPENROUTER_API_KEY}" \
-              -var="flowpulse_admin_emails=${FLOWPULSE_ADMIN_EMAILS}"
+              -var="flowpulse_admin_emails=${FLOWPULSE_ADMIN_EMAILS}" \
+              -var="database_url_version=${DATABASE_URL_VERSION}" \
+              -var="clerk_secret_key_version=${CLERK_SECRET_KEY_VERSION}" \
+              -var="openrouter_api_key_version=${OPENROUTER_API_KEY_VERSION}" \
+              -var="flowpulse_admin_emails_version=${FLOWPULSE_ADMIN_EMAILS_VERSION}"
           fi
 
       - name: Log in to Amazon ECR
@@ -225,6 +233,10 @@ jobs:
           ACM_CERTIFICATE_ARN: ${{ secrets.ACM_CERTIFICATE_ARN }}
           DOMAIN_NAME: ${{ vars.DOMAIN_NAME || secrets.FLOWPULSE_DOMAIN }}
           DESIRED_COUNT: ${{ vars.DESIRED_COUNT || 2 }}
+          DATABASE_URL_VERSION: ${{ vars.DATABASE_URL_VERSION || 1 }}
+          CLERK_SECRET_KEY_VERSION: ${{ vars.CLERK_SECRET_KEY_VERSION || 2 }}
+          OPENROUTER_API_KEY_VERSION: ${{ vars.OPENROUTER_API_KEY_VERSION || 1 }}
+          FLOWPULSE_ADMIN_EMAILS_VERSION: ${{ vars.FLOWPULSE_ADMIN_EMAILS_VERSION || 2 }}
         run: |
           terraform -chdir=infra/terraform/environments/production apply -auto-approve \
             -var="api_image_tag=${{ github.sha }}" \
@@ -236,7 +248,11 @@ jobs:
             -var="database_url=${DATABASE_URL}" \
             -var="clerk_secret_key=${CLERK_SECRET_KEY}" \
             -var="openrouter_api_key=${OPENROUTER_API_KEY}" \
-            -var="flowpulse_admin_emails=${FLOWPULSE_ADMIN_EMAILS}"
+            -var="flowpulse_admin_emails=${FLOWPULSE_ADMIN_EMAILS}" \
+            -var="database_url_version=${DATABASE_URL_VERSION}" \
+            -var="clerk_secret_key_version=${CLERK_SECRET_KEY_VERSION}" \
+            -var="openrouter_api_key_version=${OPENROUTER_API_KEY_VERSION}" \
+            -var="flowpulse_admin_emails_version=${FLOWPULSE_ADMIN_EMAILS_VERSION}"
 
       - name: Await ECS Services Rollout Stability
         env:

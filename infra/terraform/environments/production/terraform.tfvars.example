@@ -25,3 +25,9 @@ database_url           = "postgresql://user:pass@db.project.supabase.co:5432/pos
 clerk_secret_key       = "sk_live_placeholder"
 openrouter_api_key     = "sk-or-v1-placeholder"
 flowpulse_admin_emails = "admin@example.com"
+
+# Version counters for SSM write-only parameter rotation
+database_url_version           = 1
+clerk_secret_key_version       = 2
+openrouter_api_key_version     = 1
+flowpulse_admin_emails_version = 2
