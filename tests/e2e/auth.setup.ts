@@ -47,12 +47,17 @@ setup('authenticate via Clerk', async ({ page }) => {
     emailAddress: email,
   });
 
-  // Confirma que a sessão realmente permite acessar área protegida.
+  // Confirma que a sessão realmente permite acessar área protegida e que o Dashboard
+  // inicializa sem exibir erro transitório de sessão durante a hidratação do Clerk.
   await page.goto('/dashboard');
 
   await expect(page).toHaveURL(/\/dashboard/, {
     timeout: 30_000,
   });
+
+  await expect(
+    page.getByText('Sessão não autenticada no provedor de identidade.'),
+  ).not.toBeVisible();
 
   await page.context().storageState({
     path: authFile,

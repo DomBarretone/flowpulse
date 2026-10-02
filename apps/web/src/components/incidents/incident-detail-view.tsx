@@ -40,7 +40,7 @@ interface IncidentDetailViewProps {
 }
 
 export function IncidentDetailView({ incidentId }: IncidentDetailViewProps) {
-  const { getToken } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
 
   const [incident, setIncident] = useState<IncidentDetail | null>(null);
   const [events, setEvents] = useState<IncidentEvent[]>([]);
@@ -86,8 +86,14 @@ export function IncidentDetailView({ incidentId }: IncidentDetailViewProps) {
   }, [getToken, incidentId]);
 
   useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      setGeneralError('Sessão não autenticada.');
+      setLoading(false);
+      return;
+    }
     loadData();
-  }, [loadData]);
+  }, [isLoaded, isSignedIn, loadData]);
 
   // Ação: Assumir Incidente (OPEN -> ACKNOWLEDGED)
   const handleAcknowledge = async () => {

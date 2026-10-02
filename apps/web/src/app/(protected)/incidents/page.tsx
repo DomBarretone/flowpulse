@@ -14,7 +14,7 @@ import { IncidentStatusBadge } from '../../../components/incidents/incident-stat
 import { IncidentSeverityBadge } from '../../../components/incidents/incident-severity-badge';
 
 export default function IncidentsPage() {
-  const { getToken } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
 
   const [incidents, setIncidents] = useState<IncidentItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -67,8 +67,14 @@ export default function IncidentsPage() {
   }, [getToken, page, selectedStatus, selectedSeverity]);
 
   useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      setError('Sessão não autenticada.');
+      setLoading(false);
+      return;
+    }
     fetchIncidents();
-  }, [fetchIncidents]);
+  }, [isLoaded, isSignedIn, fetchIncidents]);
 
   return (
     <div className="space-y-6">
@@ -86,7 +92,7 @@ export default function IncidentsPage() {
 
         <button
           onClick={() => fetchIncidents()}
-          disabled={loading}
+          disabled={loading || !isLoaded || !isSignedIn}
           data-testid="refresh-button"
           aria-label="Atualizar lista de incidentes"
           className="inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"

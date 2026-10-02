@@ -108,6 +108,8 @@ describe('IncidentDetailView Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (useAuth as jest.Mock).mockReturnValue({
+      isLoaded: true,
+      isSignedIn: true,
       getToken: mockGetToken,
     });
   });

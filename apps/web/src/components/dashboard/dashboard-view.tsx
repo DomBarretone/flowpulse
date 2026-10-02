@@ -20,7 +20,7 @@ const VALID_PERIODS: DashboardPeriod[] = ['24h', '7d', '30d'];
 export function DashboardView() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { getToken } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
 
   const urlPeriod = searchParams.get('period') as DashboardPeriod | null;
   const initialPeriod: DashboardPeriod =
@@ -74,23 +74,38 @@ export function DashboardView() {
 
     if (validated !== period) {
       setPeriod(validated);
-      loadMetrics(validated);
+      if (isLoaded && isSignedIn) {
+        loadMetrics(validated);
+      }
     }
-  }, [searchParams, period, loadMetrics]);
+  }, [searchParams, period, isLoaded, isSignedIn, loadMetrics]);
 
-  // Carregamento inicial
+  // Carregamento inicial condicionado à prontidão do Clerk
   useEffect(() => {
+    if (!isLoaded) {
+      // Enquanto o Clerk ainda não terminou de hidratar/restaurar sessão,
+      // preserva o skeleton de carregamento sem disparar requisição prematura
+      return;
+    }
+
+    if (!isSignedIn) {
+      // Usuário comprovadamente não autenticado após prontidão do Clerk
+      setError('Sessão não autenticada no provedor de identidade.');
+      setLoading(false);
+      return;
+    }
+
     loadMetrics(period);
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, [loadMetrics, period]);
+  }, [isLoaded, isSignedIn, loadMetrics, period]);
 
   const handlePeriodChange = (newPeriod: DashboardPeriod) => {
-    // Bloqueia cliques repetidos no período já ativo
-    if (newPeriod === period || loading) return;
+    // Bloqueia cliques repetidos no período já ativo ou enquanto autenticação não está pronta
+    if (newPeriod === period || loading || !isLoaded || !isSignedIn) return;
 
     setPeriod(newPeriod);
     const params = new URLSearchParams(searchParams.toString());
@@ -100,7 +115,7 @@ export function DashboardView() {
   };
 
   const handleRefresh = () => {
-    if (!loading) {
+    if (!loading && isLoaded && isSignedIn) {
       loadMetrics(period);
     }
   };

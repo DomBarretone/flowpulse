@@ -97,6 +97,8 @@ describe('DashboardPage (/dashboard)', () => {
     jest.clearAllMocks();
     mockSearchParams = new URLSearchParams('');
     (useAuth as jest.Mock).mockReturnValue({
+      isLoaded: true,
+      isSignedIn: true,
       getToken: mockGetToken,
     });
   });
@@ -341,5 +343,109 @@ describe('DashboardPage (/dashboard)', () => {
     });
 
     expect(screen.queryByTestId('dashboard-error-alert')).not.toBeInTheDocument();
+  });
+
+  it('should render skeleton and NOT call API or display auth error when Clerk is not loaded (isLoaded=false)', async () => {
+    (useAuth as jest.Mock).mockReturnValue({
+      isLoaded: false,
+      isSignedIn: false,
+      getToken: mockGetToken,
+    });
+
+    global.fetch = jest.fn();
+
+    render(<DashboardPage />);
+
+    // Skeleton deve ser exibido
+    expect(screen.getByTestId('dashboard-skeleton')).toBeInTheDocument();
+
+    // API e getToken NÃO devem ser chamados prematuramente
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(mockGetToken).not.toHaveBeenCalled();
+
+    // Mensagem de erro de sessão NÃO deve aparecer durante o carregamento inicial
+    expect(screen.queryByTestId('dashboard-error-alert')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Sessão não autenticada no provedor de identidade.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('should transition from loading to fetching metrics when Clerk finishes loading (isLoaded: false -> true)', async () => {
+    let authState = {
+      isLoaded: false,
+      isSignedIn: false,
+      getToken: mockGetToken,
+    };
+    (useAuth as jest.Mock).mockImplementation(() => authState);
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockFullMetrics),
+    });
+
+    const { rerender } = render(<DashboardPage />);
+
+    // Inicialmente não carregado -> sem fetch, skeleton visível
+    expect(screen.getByTestId('dashboard-skeleton')).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    // Clerk conclui hidratação e usuário está autenticado
+    authState = {
+      isLoaded: true,
+      isSignedIn: true,
+      getToken: mockGetToken,
+    };
+    rerender(<DashboardPage />);
+
+    // Agora o fetch é disparado e as métricas são renderizadas
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('metric-active-automations')).toHaveTextContent('12');
+    });
+
+    expect(screen.queryByTestId('dashboard-error-alert')).not.toBeInTheDocument();
+  });
+
+  it('should show session error when Clerk is loaded but user is not signed in (isLoaded=true, isSignedIn=false)', async () => {
+    (useAuth as jest.Mock).mockReturnValue({
+      isLoaded: true,
+      isSignedIn: false,
+      getToken: mockGetToken,
+    });
+
+    global.fetch = jest.fn();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-error-alert')).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByText('Sessão não autenticada no provedor de identidade.'),
+    ).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('should show session error when Clerk is loaded and signed in but getToken resolves to null', async () => {
+    mockGetToken.mockResolvedValueOnce(null);
+    (useAuth as jest.Mock).mockReturnValue({
+      isLoaded: true,
+      isSignedIn: true,
+      getToken: mockGetToken,
+    });
+
+    global.fetch = jest.fn();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-error-alert')).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByText('Sessão não autenticada no provedor de identidade.'),
+    ).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

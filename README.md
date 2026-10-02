@@ -383,17 +383,20 @@ Principais grupos de variáveis contidos em `.env.example`:
 npm install
 ```
 
-#### 2. Executar migrações do banco de dados (Prisma)
+#### 2. Gerar cliente e executar migrações do banco de dados (Prisma)
 
 ```bash
+# Gera os tipos estritos do Prisma Client no backend
+npm run db:generate
+
 # Sincroniza o schema com o PostgreSQL configurado
-npx prisma migrate dev
+npm run db:migrate
 ```
 
 #### 3. Iniciar as aplicações em modo de desenvolvimento
 
 ```bash
-# Inicia frontend e backend em modo watch/dev
+# Inicia frontend e backend concorrentemente em modo watch/dev
 npm run dev
 ```
 
@@ -401,19 +404,25 @@ npm run dev
 - **Backend API:** [`http://localhost:3001/api/v1`](http://localhost:3001/api/v1)
 - **Documentação Swagger/OpenAPI:** [`http://localhost:3001/api/docs`](http://localhost:3001/api/docs)
 
-### Execução dos Testes
+### Execução dos Testes e Verificações de Qualidade
 
-O projeto adota uma pirâmide rigorosa de testes:
+O projeto adota comandos canônicos no monorepo para execução da suíte de qualidade:
 
 ```bash
-# Executa testes unitários (regras de negócio e cálculo de severidade)
-npm run test:unit
+# Executa a suíte de testes unitários e de integração (Jest em todos os workspaces)
+npm run test
 
-# Executa testes de integração de API (supertest contra endpoints NestJS)
-npm run test:integration
+# Executa os testes ponta a ponta E2E dos fluxos de negócio (Playwright)
+npm run test:e2e
 
-# Executa testes ponta a ponta (Playwright E2E dos fluxos de negócio)
-npx playwright test
+# Validação estática de tipos (TypeScript em modo estrito)
+npm run typecheck
+
+# Validação e formatação de código (ESLint e Prettier)
+npm run lint
+
+# Compilação completa dos pacotes e aplicações de produção
+npm run build
 ```
 
 ---
@@ -581,6 +590,7 @@ Toda a concepção, descoberta, especificação técnica e decisões arquitetura
 
 | Documento | Descrição e Finalidade |
 |---|---|
+| [`docs/evidence-v2.md`](docs/evidence-v2.md) | **Relatório de Evidências V2**: Relatório formal de atendimento aos RNFs (RNF-01 a RNF-08), dados reais de produção, testes e governança. |
 | [`docs/problem.md`](docs/problem.md) | **Definição do Problema**: Análise de dores, impactos, evidências práticas e objetivos de negócio. |
 | [`docs/prd.md`](docs/prd.md) | **Product Requirements Document (PRD)**: Perfis de usuário, requisitos funcionais (RF-01 a RF-10) e não funcionais (RNF-01 a RNF-08). |
 | [`docs/spec.md`](docs/spec.md) | **Especificação Técnica do Produto**: Contratos de API REST, schemas de eventos, modelo relacional Prisma e critérios de aceite. |
@@ -595,7 +605,7 @@ Toda a concepção, descoberta, especificação técnica e decisões arquitetura
 
 1. Crie uma branch de trabalho a partir da branch principal (`git checkout -b feature/nome-da-sua-feature`);
 2. Siga as diretrizes de código, mantendo tipagem estrita com TypeScript e padrões do ESLint/Prettier;
-3. Assegure que os testes unitários, de integração e E2E sejam executados com sucesso (`npm run test:unit`, `npx playwright test`);
+3. Assegure que os testes unitários, de integração e E2E sejam executados com sucesso (`npm run test`, `npm run test:e2e`);
 4. Envie commits atômicos e claros seguindo o padrão [Conventional Commits](https://www.conventionalcommits.org/);
 5. Abra um Pull Request com descrição detalhada das mudanças, referenciando os requisitos pertinentes de [`docs/spec.md`](docs/spec.md) ou [`docs/prd.md`](docs/prd.md).
 
