@@ -76,10 +76,11 @@ export class DashboardService {
         where: { status: AutomationStatus.ACTIVE },
       }),
 
-      // 2. Execuções agrupadas por status dentro da janela temporal
+      // 2. Execuções operacionais agrupadas por status dentro da janela temporal (exclui is_test = true)
       this.prisma.execution.groupBy({
         by: ['status'],
         where: {
+          is_test: false,
           created_at: {
             gte: startTime,
             lte: now,
@@ -108,7 +109,7 @@ export class DashboardService {
         WHERE opened_at >= ${startTime} AND opened_at <= ${now}
       `,
 
-      // 5. Agregação temporal da série de execuções
+      // 5. Agregação temporal da série de execuções operacionais (exclui is_test = true)
       period === '24h'
         ? this.prisma.$queryRaw<ExecutionSeriesRawRow[]>`
             SELECT
@@ -118,7 +119,7 @@ export class DashboardService {
               COUNT(*) FILTER (WHERE status = 'FAILED')::int AS failed,
               COUNT(*) FILTER (WHERE status = 'TIMEOUT')::int AS timeout
             FROM executions
-            WHERE created_at >= ${startTime} AND created_at <= ${now}
+            WHERE is_test = FALSE AND created_at >= ${startTime} AND created_at <= ${now}
             GROUP BY bucket
             ORDER BY bucket ASC
           `
@@ -130,7 +131,7 @@ export class DashboardService {
               COUNT(*) FILTER (WHERE status = 'FAILED')::int AS failed,
               COUNT(*) FILTER (WHERE status = 'TIMEOUT')::int AS timeout
             FROM executions
-            WHERE created_at >= ${startTime} AND created_at <= ${now}
+            WHERE is_test = FALSE AND created_at >= ${startTime} AND created_at <= ${now}
             GROUP BY bucket
             ORDER BY bucket ASC
           `,

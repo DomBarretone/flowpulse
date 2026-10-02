@@ -15,4 +15,4 @@ As capturas de tela devem ser inseridas manualmente nesta pasta de acordo com a 
 | `07-alb-listeners-targets.png` | Console da AWS EC2/ALB mostrando os listeners nas portas 80 (HTTP 301 redirect) e 443 (HTTPS com certificado ACM) e Target Groups saudáveis. |
 | `08-terraform-secret-canary.png` | Terminal executando `./scripts/verify-terraform-secrets.sh` com resultado `PASS`, comprovando zero persistência de segredos no estado. |
 | `09-openspec-validation.png` | Terminal executando `npx openspec validate --all --strict` com saída `Totals: 29 passed, 0 failed`. |
-| `10-testes-automatizados.png` | Terminal executando `npm run test` e `npm run test:e2e` exibindo a aprovação de todas as 38 suítes (206 testes Jest) e 6 testes E2E do Playwright. |
+| `10-testes-automatizados.png` | Terminal executando `npm run test` e `npm run test:e2e` exibindo a aprovação de todas as 38 suítes (211 testes Jest) e 6 testes E2E do Playwright. |

@@ -210,6 +210,19 @@ describe('DashboardController (e2e)', () => {
       expect(res.status).toBe(200);
       expect(res.body.period).toBe('7d');
     });
+
+    it('should query execution stats excluding test executions (is_test: false)', async () => {
+      await request(app.getHttpServer())
+        .get('/api/v1/dashboard/metrics')
+        .set('Authorization', 'Bearer admin-token');
+
+      const mockPrisma = app.get(PrismaService);
+      expect(mockPrisma.execution.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ is_test: false }),
+        }),
+      );
+    });
   });
 
   describe('Period Query Validation & Variations', () => {

@@ -168,6 +168,37 @@ describe('DashboardService (Unit)', () => {
       });
       expect(result.summary.open_incidents).toBe(3);
     });
+
+    it('should query executions with where: { is_test: false } to exclude validation runs from KPIs', async () => {
+      await service.getMetrics({ period: '7d' }, fixedNow);
+      expect(prismaMock.execution.groupBy).toHaveBeenCalledWith({
+        by: ['status'],
+        where: {
+          is_test: false,
+          created_at: {
+            gte: expect.any(Date),
+            lte: fixedNow,
+          },
+        },
+        _count: {
+          _all: true,
+        },
+      });
+    });
+
+    it('should compute operational KPIs strictly ignoring is_test=true (e.g. 4 SUCCESS, 1 FAILED -> 80% success rate)', async () => {
+      // Simula 4 SUCCESS e 1 FAILED operacionais (o 1 SUCCESS de teste foi filtrado pelo is_test: false no banco)
+      prismaMock.execution.groupBy.mockResolvedValueOnce([
+        { status: 'SUCCESS', _count: { _all: 4 } },
+        { status: 'FAILED', _count: { _all: 1 } },
+      ]);
+
+      const result = await service.getMetrics({ period: '7d' }, fixedNow);
+
+      expect(result.summary.executions).toBe(5);
+      expect(result.summary.failures).toBe(1);
+      expect(result.summary.success_rate).toBe(80);
+    });
   });
 
   describe('MTTA and MTTR Determinations', () => {
@@ -299,6 +330,38 @@ describe('DashboardService (Unit)', () => {
       expect(series.length).toBe(31); // 31 days inclusive from Aug 28 to Sept 27
       expect(series[0].timestamp).toBe('2026-08-28T00:00:00.000Z');
       expect(series[series.length - 1].timestamp).toBe('2026-09-27T00:00:00.000Z');
+    });
+
+    it('should query execution series filtering out is_test = TRUE for standard periods (7d/30d)', async () => {
+      await service.getMetrics({ period: '7d' }, fixedNow);
+
+      const rawCalls = prismaMock.$queryRaw.mock.calls;
+      const seriesCall = rawCalls.find((call) => {
+        const text = Array.isArray(call[0]) ? call[0].join(' ') : String(call[0]);
+        return text.includes('date_trunc') && text.includes('executions');
+      });
+
+      expect(seriesCall).toBeDefined();
+      const querySql = Array.isArray(seriesCall[0])
+        ? seriesCall[0].join(' ')
+        : String(seriesCall[0]);
+      expect(querySql).toMatch(/is_test\s*=\s*FALSE/i);
+    });
+
+    it('should query execution series filtering out is_test = TRUE for hourly period (24h)', async () => {
+      await service.getMetrics({ period: '24h' }, fixedNow);
+
+      const rawCalls = prismaMock.$queryRaw.mock.calls;
+      const seriesCall = rawCalls.find((call) => {
+        const text = Array.isArray(call[0]) ? call[0].join(' ') : String(call[0]);
+        return text.includes('date_trunc') && text.includes('hour');
+      });
+
+      expect(seriesCall).toBeDefined();
+      const querySql = Array.isArray(seriesCall[0])
+        ? seriesCall[0].join(' ')
+        : String(seriesCall[0]);
+      expect(querySql).toMatch(/is_test\s*=\s*FALSE/i);
     });
   });
 });
